@@ -7,6 +7,7 @@ import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.annotations.InternalAgentToolsApi
 import ai.koog.prompt.message.Message
 import io.github.oshai.kotlinlogging.KLogger
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -97,9 +98,13 @@ public class GenericAgentEnvironment(
             )
         }
 
+        @Suppress("UNCHECKED_CAST")
+        val concreteTool = tool as Tool<Any?, Any?>
+
         val toolResult = try {
-            @Suppress("UNCHECKED_CAST")
-            (tool as Tool<Any?, Any?>).execute(toolArgs)
+            withContext(ToolCallContext(agentId, id, toolName, toolArgsJson)) {
+                concreteTool.execute(toolArgs)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: ToolException) {

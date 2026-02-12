@@ -23,6 +23,16 @@ public sealed interface StreamFrame {
     ) : StreamFrame
 
     /**
+     * Represents a frame containing reasoning content (e.g., thought process) during streaming.
+     *
+     * @property content The reasoning content text.
+     */
+    @Serializable
+    public data class ReasoningContent(
+        val content: String
+    ) : StreamFrame
+
+    /**
      * Represents a frame of a streaming response from a LLM that contains a tool call.
      *
      * @property id The ID of the tool call. Can be null for partial frames.

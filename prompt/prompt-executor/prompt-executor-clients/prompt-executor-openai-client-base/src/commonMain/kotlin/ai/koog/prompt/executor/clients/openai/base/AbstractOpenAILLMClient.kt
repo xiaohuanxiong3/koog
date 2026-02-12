@@ -264,7 +264,7 @@ public abstract class AbstractOpenAILLMClient<TResponse : OpenAIBaseLLMResponse,
     }
 
     @OptIn(ExperimentalUuidApi::class)
-    protected fun convertPromptToMessages(prompt: Prompt, model: LLModel): List<OpenAIMessage> {
+    protected open fun convertPromptToMessages(prompt: Prompt, model: LLModel): List<OpenAIMessage> {
         val messages = mutableListOf<OpenAIMessage>()
         val pendingCalls = mutableListOf<OpenAIToolCall>()
 

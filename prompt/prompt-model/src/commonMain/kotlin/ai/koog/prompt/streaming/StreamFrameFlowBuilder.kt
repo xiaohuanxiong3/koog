@@ -75,16 +75,38 @@ public class StreamFrameFlowBuilder(
      * Emits a [StreamFrame.Append] with the given [text].
      */
     public suspend fun emitAppend(text: String) {
-        tryEmitPendingToolCall()
-        flowCollector.emitAppend(text)
+        if (text.isNotEmpty()) {
+            tryEmitPendingToolCall()
+            flowCollector.emitAppend(text)
+        }
+    }
+
+    /**
+     * Emits a [StreamFrame.ReasoningContent] with the given [content].
+     */
+    public suspend fun emitReasoningContent(content: String) {
+        if (content.isNotEmpty()) {
+            tryEmitPendingToolCall()
+            flowCollector.emit(StreamFrame.ReasoningContent(content))
+        }
     }
 
     /**
      * Emits a [StreamFrame.End] with the given [finishReason].
+     * Ignores messages with finishReason equal to "stop" when there is a pending tool call.
      */
     public suspend fun emitEnd(finishReason: String? = null, metaInfo: ResponseMetaInfo? = null) {
-        tryEmitPendingToolCall()
-        flowCollector.emitEnd(finishReason, metaInfo)
+        if (!finishReason.isNullOrEmpty()) {
+            // Ignore "stop" finishReason only when there is a pending tool call
+            val hasPendingToolCall = pendingToolCallRef.load() != null
+            if (finishReason == "stop" && hasPendingToolCall) {
+                tryEmitPendingToolCall()
+                flowCollector.emitEnd("tool_calls", metaInfo)
+            } else {
+                tryEmitPendingToolCall()
+                flowCollector.emitEnd(finishReason, metaInfo)
+            }
+        }
     }
 
     /**

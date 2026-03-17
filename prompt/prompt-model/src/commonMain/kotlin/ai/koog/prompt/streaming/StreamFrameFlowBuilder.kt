@@ -135,7 +135,7 @@ public class StreamFrameFlowBuilder(
         name: String? = null,
         args: String? = null
     ) {
-        val new: PendingToolCall = if (id != null) {
+        val new: PendingToolCall = if (!id.isNullOrBlank()) {
             tryEmitPendingToolCall()
             PendingToolCall(index, id, name, args)
         } else {

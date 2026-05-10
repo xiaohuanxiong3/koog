@@ -201,9 +201,8 @@ public class DeepSeekLLMClient @JvmOverloads constructor(
 
         response.collect { chunk ->
             chunk.choices.firstOrNull()?.let { choice ->
-                choice.delta.content?.let { emitAppend(it) }
-                choice.delta.reasoningContent?.let { emitReasoningContent(it) }
                 choice.delta.content?.let { emitTextDelta(it) }
+                choice.delta.content?.let { emitReasoningDelta(text = it)}
 
                 choice.delta.toolCalls?.forEach { toolCall ->
                     val id = toolCall.id

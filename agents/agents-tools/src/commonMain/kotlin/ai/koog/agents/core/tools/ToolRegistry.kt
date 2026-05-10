@@ -1,7 +1,6 @@
 package ai.koog.agents.core.tools
 
 import ai.koog.agents.annotations.JavaAPI
-import ai.koog.agents.core.tools.ToolRegistry.Builder
 import kotlin.jvm.JvmStatic
 
 /**
@@ -30,7 +29,14 @@ import kotlin.jvm.JvmStatic
  *
  * @property tools The list of tools contained in this registry
  */
-public class ToolRegistry private constructor(tools: List<Tool<*, *>> = emptyList()) {
+public class ToolRegistry internal constructor(tools: List<Tool<*, *>> = emptyList()) {
+
+    /**
+     * Creates a new ToolRegistry using the provided builder initialization block.
+     *
+     * @param init A lambda that configures the registry by adding tools
+     */
+    public constructor(init: ToolRegistryBuilder.() -> Unit) : this(ToolRegistryBuilder().apply(init).build().tools)
 
     private val _tools: MutableList<Tool<*, *>> = tools.toMutableList()
 
@@ -122,47 +128,6 @@ public class ToolRegistry private constructor(tools: List<Tool<*, *>> = emptyLis
     }
 
     /**
-     * Builder class to construct and manage a registry of tools.
-     *
-     * This class allows for the registration of tools in a controlled manner.
-     * It ensures that each tool added to the registry has a unique name.
-     */
-    @JavaAPI
-    public class Builder internal constructor() {
-        private val tools = mutableListOf<Tool<*, *>>()
-
-        /**
-         * Add a tool to the registry
-         */
-        @JavaAPI
-        public fun tool(tool: Tool<*, *>) {
-            require(tool.name !in tools.map { it.name }) { "Tool \"${tool.name}\" is already defined" }
-            tools.add(tool)
-        }
-
-        /**
-         * Add multiple tools to the registry
-         */
-        @JavaAPI
-        public fun tools(toolsList: List<Tool<*, *>>) {
-            toolsList.forEach { tool(it) }
-        }
-
-        /**
-         * Finalizes the tool registration process and constructs a `ToolRegistry`.
-         *
-         * This method collects all tools previously added using the builder
-         * and returns a new instance of `ToolRegistry` containing those tools.
-         *
-         * @return A new `ToolRegistry` instance containing the registered tools.
-         */
-        @JavaAPI
-        public fun build(): ToolRegistry {
-            return ToolRegistry(tools)
-        }
-    }
-
-    /**
      * Companion object providing factory methods and constants for ToolRegistry.
      */
     public companion object {
@@ -178,15 +143,8 @@ public class ToolRegistry private constructor(tools: List<Tool<*, *>> = emptyLis
         public fun builder(): ToolRegistryBuilder = ToolRegistryBuilder()
 
         /**
-         * Creates a new ToolRegistry using the provided builder initialization block.
-         *
-         * @param init A lambda that configures the registry by adding tools
-         * @return A new ToolRegistry instance configured according to the initialization block
-         */
-        public operator fun invoke(init: Builder.() -> Unit): ToolRegistry = Builder().apply(init).build()
-
-        /**
          * A constant representing an empty registry with no tools.
+         * TODO(KG-676): ToolRegistry is mutable but stored as an immutable object.
          */
         public val EMPTY: ToolRegistry = ToolRegistry(emptyList())
     }

@@ -1,12 +1,11 @@
 package ai.koog.agents.core.feature.model.events
 
 import ai.koog.agents.core.agent.execution.AgentExecutionInfo
-import ai.koog.agents.core.annotation.InternalAgentsApi
 import ai.koog.agents.core.feature.model.AIAgentError
-import ai.koog.agents.core.utils.SerializationUtils
-import kotlinx.datetime.Clock
+import ai.koog.serialization.JSONElement
+import ai.koog.serialization.JSONPrimitive
+import ai.koog.utils.time.KoogClock
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
 
 /**
  * Represents an event triggered when the execution of a specific AI agent node starts.
@@ -32,25 +31,25 @@ public data class NodeExecutionStartingEvent(
     override val executionInfo: AgentExecutionInfo,
     val runId: String,
     val nodeName: String,
-    val input: JsonElement?,
-    override val timestamp: Long = Clock.System.now().toEpochMilliseconds(),
+    val input: JSONElement?,
+    override val timestamp: Long = KoogClock.System.now().toEpochMilliseconds(),
 ) : DefinedFeatureEvent() {
 
     /**
      * Creates an instance of [NodeExecutionStartingEvent].
      *
      * This constructor is deprecated and should be replaced with the constructor
-     * that accepts [executionInfo] parameter, and an input parameter of type [JsonElement].
+     * that accepts [executionInfo] parameter, and an input parameter of type [JSONElement].
      */
     @Deprecated(
-        message = "Use constructor with executionInfo parameter, and input parameter of type [JsonElement]",
+        message = "Use constructor with executionInfo parameter, and input parameter of type [JSONElement]",
         replaceWith = ReplaceWith("NodeExecutionStartingEvent(executionInfo, runId, nodeName, input, timestamp)")
     )
     public constructor(
         runId: String,
         nodeName: String,
         input: String,
-        timestamp: Long = Clock.System.now().toEpochMilliseconds()
+        timestamp: Long = KoogClock.System.now().toEpochMilliseconds()
     ) : this(
         eventId = NodeExecutionStartingEvent::class.simpleName.toString(),
         executionInfo = AgentExecutionInfo(
@@ -59,7 +58,7 @@ public data class NodeExecutionStartingEvent(
         ),
         runId = runId,
         nodeName = nodeName,
-        input = @OptIn(InternalAgentsApi::class) SerializationUtils.parseDataToJsonElementOrDefault(input),
+        input = JSONPrimitive(input),
         timestamp = timestamp
     )
 }
@@ -84,19 +83,19 @@ public data class NodeExecutionCompletedEvent(
     override val executionInfo: AgentExecutionInfo,
     val runId: String,
     val nodeName: String,
-    val input: JsonElement?,
-    val output: JsonElement?,
-    override val timestamp: Long = Clock.System.now().toEpochMilliseconds(),
+    val input: JSONElement?,
+    val output: JSONElement?,
+    override val timestamp: Long = KoogClock.System.now().toEpochMilliseconds(),
 ) : DefinedFeatureEvent() {
 
     /**
      * Creates an instance of [NodeExecutionCompletedEvent].
      *
      * This constructor is deprecated and should be replaced with the constructor
-     * that accepts [executionInfo] parameter, and [input] and [output] parameters of type [JsonElement].
+     * that accepts [executionInfo] parameter, and [input] and [output] parameters of type [JSONElement].
      */
     @Deprecated(
-        message = "Use constructor with executionInfo parameter, and input and output parameters of type [JsonElement]",
+        message = "Use constructor with executionInfo parameter, and input and output parameters of type [JSONElement]",
         replaceWith = ReplaceWith("NodeExecutionCompletedEvent(executionInfo, runId, nodeName, input, output, timestamp)")
     )
     public constructor(
@@ -104,7 +103,7 @@ public data class NodeExecutionCompletedEvent(
         nodeName: String,
         input: String,
         output: String,
-        timestamp: Long = Clock.System.now().toEpochMilliseconds()
+        timestamp: Long = KoogClock.System.now().toEpochMilliseconds()
     ) : this(
         eventId = NodeExecutionCompletedEvent::class.simpleName.toString(),
         executionInfo = AgentExecutionInfo(
@@ -113,8 +112,8 @@ public data class NodeExecutionCompletedEvent(
         ),
         runId = runId,
         nodeName = nodeName,
-        input = @OptIn(InternalAgentsApi::class) SerializationUtils.parseDataToJsonElementOrDefault(input),
-        output = @OptIn(InternalAgentsApi::class) SerializationUtils.parseDataToJsonElementOrDefault(output),
+        input = JSONPrimitive(input),
+        output = JSONPrimitive(output),
         timestamp = timestamp
     )
 }
@@ -137,26 +136,26 @@ public data class NodeExecutionFailedEvent(
     override val executionInfo: AgentExecutionInfo,
     val runId: String,
     val nodeName: String,
-    val input: JsonElement?,
+    val input: JSONElement?,
     val error: AIAgentError,
-    override val timestamp: Long = Clock.System.now().toEpochMilliseconds(),
+    override val timestamp: Long = KoogClock.System.now().toEpochMilliseconds(),
 ) : DefinedFeatureEvent() {
 
     /**
      * Creates an instance of [NodeExecutionFailedEvent].
      *
      * This constructor is deprecated and should be replaced with the constructor
-     * that accepts [executionInfo] parameter, and an input parameter of type [JsonElement].
+     * that accepts [executionInfo] parameter, and an input parameter of type [JSONElement].
      */
     @Deprecated(
-        message = "Use constructor with executionInfo parameter, and input parameter of type [JsonElement]",
+        message = "Use constructor with executionInfo parameter, and input parameter of type [JSONElement]",
         replaceWith = ReplaceWith("NodeExecutionFailedEvent(executionInfo, runId, nodeName, input, error, timestamp)")
     )
     public constructor(
         runId: String,
         nodeName: String,
         error: AIAgentError,
-        timestamp: Long = Clock.System.now().toEpochMilliseconds()
+        timestamp: Long = KoogClock.System.now().toEpochMilliseconds()
     ) : this(
         eventId = NodeExecutionFailedEvent::class.simpleName.toString(),
         executionInfo = AgentExecutionInfo(

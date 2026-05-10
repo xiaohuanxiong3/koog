@@ -13,20 +13,18 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.params.LLMParams
 import ai.koog.prompt.streaming.StreamFrame
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import ai.koog.utils.time.KoogClock
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 class BedrockAmazonNovaSerializationTest {
 
-    private val mockClock = object : Clock {
-        override fun now(): Instant = Instant.DISTANT_FUTURE
-    }
+    private val mockClock = KoogClock { Instant.DISTANT_FUTURE }
 
     private val model = BedrockModels.AmazonNovaPro
     private val systemMessage = "You are a helpful assistant."
@@ -215,7 +213,7 @@ class BedrockAmazonNovaSerializationTest {
         """.trimIndent()
 
         val content = BedrockAmazonNovaSerialization.parseNovaStreamChunk(chunkJson)
-        assertEquals(listOf(chunkContent).map(StreamFrame::Append), content)
+        assertEquals(listOf(chunkContent).map(StreamFrame::TextDelta), content)
     }
 
     @Test
@@ -231,7 +229,7 @@ class BedrockAmazonNovaSerializationTest {
         """.trimIndent()
 
         val content = BedrockAmazonNovaSerialization.parseNovaStreamChunk(chunkJson)
-        assertEquals(listOf("").map(StreamFrame::Append), content)
+        assertEquals(listOf("").map(StreamFrame::TextDelta), content)
     }
 
     @Test

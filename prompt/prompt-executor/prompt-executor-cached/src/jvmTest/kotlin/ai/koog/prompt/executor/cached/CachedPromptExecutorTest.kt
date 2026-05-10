@@ -13,9 +13,9 @@ import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.prompt.streaming.streamFrameFlowOf
+import ai.koog.utils.time.KoogClock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -25,9 +25,7 @@ class CachedPromptExecutorTest {
         private val testPrompt = Prompt(listOf(Message.User("Hello, world!", RequestMetaInfo.Empty)), "test-prompt-id")
         private val testTools = emptyList<ToolDescriptor>()
         private val testResponse = listOf(Message.Assistant("Hello, user!", ResponseMetaInfo.Empty))
-        private val testClock = object : Clock {
-            override fun now() = testResponse.first().metaInfo.timestamp
-        }
+        private val testClock = KoogClock { testResponse.first().metaInfo.timestamp }
         private val testModel = LLModel(
             provider = object : LLMProvider("", "") {},
             id = "",
@@ -54,7 +52,7 @@ class CachedPromptExecutorTest {
     }
 
     // Mock implementation of PromptExecutor
-    private class MockPromptExecutor : PromptExecutor {
+    private class MockPromptExecutor : PromptExecutor() {
         var executeCalled = false
         var executeStreamingCalled = false
 

@@ -1,12 +1,12 @@
 package ai.koog.prompt
 
 import ai.koog.prompt.dsl.Prompt
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import ai.koog.utils.time.KoogClock
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /**
  * Tests for @JavaAPI methods in Prompt class.
@@ -16,9 +16,7 @@ class JavaAPIPromptTest {
     companion object {
         val ts: Instant = Instant.parse("2023-01-01T00:00:00Z")
 
-        val testClock: Clock = object : Clock {
-            override fun now(): Instant = ts
-        }
+        val testClock: KoogClock = KoogClock { ts }
 
         const val promptId = "test-prompt-id"
     }

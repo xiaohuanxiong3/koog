@@ -10,10 +10,11 @@ import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.executor.clients.ConnectionTimeoutConfig
 import ai.koog.prompt.executor.clients.LLMClient
 import ai.koog.prompt.executor.clients.LLMClientException
-import ai.koog.prompt.executor.clients.LLMEmbeddingProvider
 import ai.koog.prompt.executor.clients.google.models.GoogleCandidate
 import ai.koog.prompt.executor.clients.google.models.GoogleContent
 import ai.koog.prompt.executor.clients.google.models.GoogleData
+import ai.koog.prompt.executor.clients.google.models.GoogleEmbeddingBatchRequest
+import ai.koog.prompt.executor.clients.google.models.GoogleEmbeddingBatchResponse
 import ai.koog.prompt.executor.clients.google.models.GoogleEmbeddingRequest
 import ai.koog.prompt.executor.clients.google.models.GoogleEmbeddingResponse
 import ai.koog.prompt.executor.clients.google.models.GoogleFunctionCallingConfig
@@ -40,25 +41,14 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.params.LLMParams
 import ai.koog.prompt.streaming.StreamFrame
-import ai.koog.prompt.streaming.emitAppend
-import ai.koog.prompt.streaming.emitEnd
-import ai.koog.prompt.streaming.emitToolCall
-import ai.koog.prompt.streaming.streamFrameFlow
-import ai.koog.prompt.structure.RegisteredBasicJsonSchemaGenerators
-import ai.koog.prompt.structure.RegisteredStandardJsonSchemaGenerators
+import ai.koog.prompt.streaming.buildStreamFrameFlow
+import ai.koog.prompt.streaming.requireEndFrame
 import ai.koog.prompt.structure.annotations.InternalStructuredOutputApi
+import ai.koog.utils.time.KoogClock
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.plugins.defaultRequest
-import io.ktor.client.plugins.sse.SSE
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -77,6 +67,7 @@ import kotlin.uuid.Uuid
  *
  * @property baseUrl The base URL for the Google AI API.
  * @property timeoutConfig Timeout configuration for API requests.
+ * @property fallbackThoughtSignature Default `thought_signature` used for thinking models
  */
 public class GoogleClientSettings(
     public val baseUrl: String = "https://generativelanguage.googleapis.com",
@@ -84,7 +75,9 @@ public class GoogleClientSettings(
     public val defaultPath: String = "v1beta/models",
     public val generateContentMethod: String = "generateContent",
     public val streamGenerateContentMethod: String = "streamGenerateContent",
-    public val embedContentMethod: String = "embedContent"
+    public val embedContentMethod: String = "embedContent",
+    public val batchEmbedContentsMethod: String = "batchEmbedContents",
+    public val fallbackThoughtSignature: String = "context_engineering_is_the_way_to_go",
 )
 
 /**
@@ -93,55 +86,73 @@ public class GoogleClientSettings(
  * This client supports both standard and streaming text generation with
  * optional tool calling capabilities.
  *
- * @param apiKey The API key for the Google AI API
  * @param settings Custom client settings, defaults to standard API endpoint and timeouts
- * @param baseClient Optional custom HTTP client
+ * @param httpClient A preconfigured Koog HTTP client used for API calls. Must have authentication and other
+ *   request defaults already embedded. To use a Ktor-backed client with standard defaults, use the secondary
+ *   constructor that accepts an API key and an [io.ktor.client.HttpClient].
  * @param clock Clock instance used for tracking response metadata timestamps.
  */
 public open class GoogleLLMClient @JvmOverloads constructor(
-    private val apiKey: String,
     private val settings: GoogleClientSettings = GoogleClientSettings(),
-    baseClient: HttpClient = HttpClient(),
-    private val clock: Clock = Clock.System
-) : LLMClient, LLMEmbeddingProvider {
+    private val httpClient: KoogHttpClient,
+    private val clock: KoogClock = KoogClock.System
+) : LLMClient() {
+
+    /**
+     * Secondary constructor for creating a GoogleLLMClient backed with a Ktor HTTP client.
+     *
+     * @param apiKey The API key for the Google AI API
+     * @param settings Custom client settings, defaults to standard API endpoint and timeouts
+     * @param baseClient Ktor HTTP client used for making API requests.
+     * @param clock Clock instance used for tracking response metadata timestamps.
+     */
+    @JvmOverloads
+    public constructor(
+        apiKey: String,
+        settings: GoogleClientSettings = GoogleClientSettings(),
+        baseClient: HttpClient = HttpClient(),
+        clock: KoogClock = KoogClock.System
+    ) : this(
+        settings,
+        createConfiguredHttpClient(apiKey, settings, baseClient),
+        clock
+    )
 
     @OptIn(InternalStructuredOutputApi::class)
     private companion object {
+        private const val GOOGLE_CLIENT_NAME = "GoogleLLMClient"
+
         private val logger = KotlinLogging.logger { }
-
-        init {
-            // On class load register custom Google JSON schema generators for structured output.
-            RegisteredBasicJsonSchemaGenerators[LLMProvider.Google] = GoogleBasicJsonSchemaGenerator
-            RegisteredStandardJsonSchemaGenerators[LLMProvider.Google] = GoogleStandardJsonSchemaGenerator
+        private val json = Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+            encodeDefaults = true
+            explicitNulls = false
         }
+
+        private fun createConfiguredHttpClient(
+            apiKey: String,
+            settings: GoogleClientSettings,
+            baseClient: HttpClient = HttpClient()
+        ): KoogHttpClient = KoogHttpClient.fromKtorClient(
+            clientName = GOOGLE_CLIENT_NAME,
+            logger = logger,
+            baseClient = baseClient,
+            baseUrl = settings.baseUrl,
+            requestTimeoutMillis = settings.timeoutConfig.requestTimeoutMillis,
+            connectTimeoutMillis = settings.timeoutConfig.connectTimeoutMillis,
+            socketTimeoutMillis = settings.timeoutConfig.socketTimeoutMillis,
+            json = json,
+            queryParameters = mapOf("key" to apiKey),
+        )
     }
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        encodeDefaults = true
-        explicitNulls = false
+    override fun getBasicJsonSchemaGenerator(): GoogleBasicJsonSchemaGenerator {
+        return GoogleBasicJsonSchemaGenerator
     }
 
-    private val httpClient: KoogHttpClient = KoogHttpClient.fromKtorClient(
-        clientName = clientName,
-        logger = logger,
-        baseClient = baseClient
-    ) {
-        defaultRequest {
-            url(settings.baseUrl)
-            url.parameters.append("key", apiKey)
-            contentType(ContentType.Application.Json)
-        }
-        install(SSE)
-        install(ContentNegotiation) {
-            json(json)
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = settings.timeoutConfig.requestTimeoutMillis
-            connectTimeoutMillis = settings.timeoutConfig.connectTimeoutMillis
-            socketTimeoutMillis = settings.timeoutConfig.socketTimeoutMillis
-        }
+    override fun getStandardJsonSchemaGenerator(): GoogleStandardJsonSchemaGenerator {
+        return GoogleStandardJsonSchemaGenerator
     }
 
     /**
@@ -149,6 +160,8 @@ public open class GoogleLLMClient @JvmOverloads constructor(
      *
      * @return The LLM provider, which is Google for this implementation.
      */
+    override val clientName: String = GOOGLE_CLIENT_NAME
+
     override fun llmProvider(): LLMProvider = LLMProvider.Google
 
     override suspend fun execute(prompt: Prompt, model: LLModel, tools: List<ToolDescriptor>): List<Message.Response> {
@@ -168,7 +181,7 @@ public open class GoogleLLMClient @JvmOverloads constructor(
         prompt: Prompt,
         model: LLModel,
         tools: List<ToolDescriptor>
-    ): Flow<StreamFrame> = streamFrameFlow {
+    ): Flow<StreamFrame> = buildStreamFrameFlow {
         logger.debug { "Executing streaming prompt: $prompt with model: $model" }
         require(model.supports(LLMCapability.Completion)) {
             "Model ${model.id} does not support chat completions"
@@ -195,15 +208,29 @@ public open class GoogleLLMClient @JvmOverloads constructor(
                     )
                 }
                 response.candidates.firstOrNull()?.let { candidate ->
-                    candidate.content?.parts?.forEach { part ->
+                    candidate.content?.parts?.forEachIndexed { index, part ->
                         when (part) {
-                            is GooglePart.FunctionCall -> emitToolCall(
-                                id = part.functionCall.id,
-                                name = part.functionCall.name,
-                                content = part.functionCall.args?.toString() ?: "{}"
-                            )
+                            is GooglePart.Text -> {
+                                if (part.thought == true) {
+                                    emitReasoningDelta(
+                                        id = part.thoughtSignature,
+                                        text = part.text,
+                                        index = index,
+                                    )
+                                } else {
+                                    emitTextDelta(part.text, index)
+                                }
+                            }
 
-                            is GooglePart.Text -> emitAppend(part.text)
+                            is GooglePart.FunctionCall -> {
+                                emitToolCallDelta(
+                                    id = part.functionCall.id,
+                                    name = part.functionCall.name,
+                                    args = part.functionCall.args?.toString() ?: "{}",
+                                    index = index,
+                                )
+                            }
+
                             else -> Unit
                         }
                     }
@@ -219,7 +246,7 @@ public open class GoogleLLMClient @JvmOverloads constructor(
                 cause = e
             )
         }
-    }
+    }.requireEndFrame()
 
     override suspend fun executeMultipleChoices(
         prompt: Prompt,
@@ -291,6 +318,7 @@ public open class GoogleLLMClient @JvmOverloads constructor(
         val pendingCalls = mutableListOf<GooglePart.FunctionCall>()
         val pendingResults = mutableListOf<GooglePart.FunctionResponse>()
         var lastSignature: String? = null
+        val isThinkingModel = model.supports(LLMCapability.Thinking)
 
         fun flushCalls() {
             if (pendingCalls.isNotEmpty()) {
@@ -380,13 +408,22 @@ public open class GoogleLLMClient @JvmOverloads constructor(
                     val signature = lastSignature
                     lastSignature = null // Consume: only first call gets the signature
 
+                    // For thinking models (e.g., Gemini 3), thought_signature is required for all function calls.
+                    // If no signature is available from a Reasoning message, use the official workaround dummy signature.
+                    // See: https://ai.google.dev/gemini-api/docs/thought-signatures
+                    val effectiveSignature = signature ?: if (isThinkingModel) {
+                        settings.fallbackThoughtSignature
+                    } else {
+                        null
+                    }
+
                     pendingCalls += GooglePart.FunctionCall(
                         functionCall = GoogleData.FunctionCall(
                             id = message.id,
                             name = message.tool,
                             args = json.decodeFromString(message.content)
                         ),
-                        thoughtSignature = signature
+                        thoughtSignature = effectiveSignature
                     )
                 }
             }
@@ -454,8 +491,11 @@ public open class GoogleLLMClient @JvmOverloads constructor(
 
         val functionCallingConfig = when (val toolChoice = googleParams.toolChoice) {
             LLMParams.ToolChoice.Auto -> GoogleFunctionCallingConfig(GoogleFunctionCallingMode.AUTO)
+
             LLMParams.ToolChoice.None -> GoogleFunctionCallingConfig(GoogleFunctionCallingMode.NONE)
+
             LLMParams.ToolChoice.Required -> GoogleFunctionCallingConfig(GoogleFunctionCallingMode.ANY)
+
             is LLMParams.ToolChoice.Named -> {
                 GoogleFunctionCallingConfig(
                     GoogleFunctionCallingMode.ANY,
@@ -490,6 +530,7 @@ public open class GoogleLLMClient @JvmOverloads constructor(
 
                         val blob: GoogleData.Blob = when (val content = part.content) {
                             is AttachmentContent.Binary -> GoogleData.Blob(part.mimeType, content.asBytes())
+
                             else -> throw IllegalArgumentException(
                                 "Unsupported image attachment content: ${content::class}"
                             )
@@ -505,6 +546,7 @@ public open class GoogleLLMClient @JvmOverloads constructor(
 
                         val blob: GoogleData.Blob = when (val content = part.content) {
                             is AttachmentContent.Binary -> GoogleData.Blob(part.mimeType, content.asBytes())
+
                             else -> throw IllegalArgumentException(
                                 "Unsupported audio attachment content: ${content::class}"
                             )
@@ -520,6 +562,7 @@ public open class GoogleLLMClient @JvmOverloads constructor(
 
                         val blob: GoogleData.Blob = when (val content = part.content) {
                             is AttachmentContent.Binary -> GoogleData.Blob(part.mimeType, content.asBytes())
+
                             else -> throw IllegalArgumentException(
                                 "Unsupported file attachment content: ${content::class}"
                             )
@@ -535,6 +578,7 @@ public open class GoogleLLMClient @JvmOverloads constructor(
 
                         val blob: GoogleData.Blob = when (val content = part.content) {
                             is AttachmentContent.Binary -> GoogleData.Blob(part.mimeType, content.asBytes())
+
                             else -> throw IllegalArgumentException(
                                 "Unsupported video attachment content: ${content::class}"
                             )
@@ -561,9 +605,13 @@ public open class GoogleLLMClient @JvmOverloads constructor(
         fun JsonObjectBuilder.putType(type: ToolParameterType) {
             when (type) {
                 ToolParameterType.Boolean -> put("type", "boolean")
+
                 ToolParameterType.Float -> put("type", "number")
+
                 ToolParameterType.Integer -> put("type", "integer")
+
                 ToolParameterType.String -> put("type", "string")
+
                 ToolParameterType.Null -> put("type", "null")
 
                 is ToolParameterType.Enum -> {
@@ -700,6 +748,7 @@ public open class GoogleLLMClient @JvmOverloads constructor(
         return when {
             // When the model calls tools, keep Reasoning (for signature) and Tool.Call, filter out Assistant text
             responses.any { it is Message.Tool.Call } -> responses.filter { it is Message.Reasoning || it is Message.Tool.Call }
+
             // If no messages where returned, return an empty message and check finishReason
             responses.isEmpty() -> listOf(
                 Message.Assistant(
@@ -708,6 +757,7 @@ public open class GoogleLLMClient @JvmOverloads constructor(
                     metaInfo = metaInfo
                 )
             )
+
             // Just return responses
             else -> responses
         }
@@ -789,10 +839,14 @@ public open class GoogleLLMClient @JvmOverloads constructor(
         return models.map { id -> modelsById[id] ?: LLModel(provider = llmProvider(), id = id) }
     }
 
-    override fun close() {
-        httpClient.close()
-    }
-
+    /**
+     * Embeds the given text using the Google AI embeddings API.
+     *
+     * @param text The text to embed.
+     * @param model The model to use for embedding. Must have the [LLMCapability.Embed] capability.
+     * @return A list of floating-point values representing the embedding vector.
+     * @throws IllegalArgumentException if the model does not have the Embed capability.
+     */
     override suspend fun embed(text: String, model: LLModel): List<Double> {
         require(model.supports(LLMCapability.Embed)) {
             "Model ${model.id} does not support embedding."
@@ -825,5 +879,55 @@ public open class GoogleLLMClient @JvmOverloads constructor(
                 cause = e
             )
         }
+    }
+
+    /**
+     * Embeds the given inputs using the Google AI batch embeddings API.
+     *
+     * @param inputs The list of texts to embed.
+     * @param model The model to use for embedding. Must have the [LLMCapability.Embed] capability.
+     * @return A list of embedding vectors, one per input string.
+     * @throws IllegalArgumentException if the model does not have the Embed capability.
+     */
+    override suspend fun embed(inputs: List<String>, model: LLModel): List<List<Double>> {
+        require(model.supports(LLMCapability.Embed)) {
+            "Model ${model.id} does not support embedding."
+        }
+
+        logger.debug { "Embedding input with model: ${model.id}" }
+
+        val request = GoogleEmbeddingBatchRequest(
+            requests = inputs.map {
+                GoogleEmbeddingRequest(
+                    model = "models/${model.id}",
+                    content = GoogleContent(
+                        parts = listOf(GooglePart.Text(it))
+                    )
+                )
+            }
+        )
+
+        try {
+            val response = httpClient.post(
+                path = "${settings.defaultPath}/${model.id}:${settings.batchEmbedContentsMethod}",
+                request = request,
+                requestBodyType = GoogleEmbeddingBatchRequest::class,
+                responseType = GoogleEmbeddingBatchResponse::class,
+            )
+
+            return response.embeddings.map { it.values }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw LLMClientException(
+                clientName = clientName,
+                message = e.message,
+                cause = e
+            )
+        }
+    }
+
+    override fun close() {
+        httpClient.close()
     }
 }

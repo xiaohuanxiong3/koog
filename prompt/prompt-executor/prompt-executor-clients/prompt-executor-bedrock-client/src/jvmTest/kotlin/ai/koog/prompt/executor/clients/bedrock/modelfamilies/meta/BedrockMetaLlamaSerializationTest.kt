@@ -8,8 +8,7 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.params.LLMParams
 import ai.koog.prompt.streaming.StreamFrame
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import ai.koog.utils.time.KoogClock
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -18,9 +17,7 @@ import kotlin.test.assertTrue
 
 class BedrockMetaLlamaSerializationTest {
 
-    private val mockClock = object : Clock {
-        override fun now(): Instant = Clock.System.now()
-    }
+    private val mockClock = KoogClock { KoogClock.System.now() }
 
     private val model = BedrockModels.MetaLlama3_0_8BInstruct
     private val systemMessage = "You are a helpful assistant."
@@ -154,7 +151,7 @@ class BedrockMetaLlamaSerializationTest {
         """.trimIndent()
 
         val content = BedrockMetaLlamaSerialization.parseLlamaStreamChunk(chunkJson)
-        assertEquals(listOf("Hello, ").map(StreamFrame::Append), content)
+        assertEquals(listOf("Hello, ").map(StreamFrame::TextDelta), content)
     }
 
     @Test
@@ -166,7 +163,7 @@ class BedrockMetaLlamaSerializationTest {
         """.trimIndent()
 
         val content = BedrockMetaLlamaSerialization.parseLlamaStreamChunk(chunkJson)
-        assertEquals(listOf("").map(StreamFrame::Append), content)
+        assertEquals(listOf("").map(StreamFrame::TextDelta), content)
     }
 
     @Test

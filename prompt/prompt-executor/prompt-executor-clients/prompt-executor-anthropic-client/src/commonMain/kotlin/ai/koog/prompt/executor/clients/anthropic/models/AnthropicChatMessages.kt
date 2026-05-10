@@ -8,6 +8,38 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlin.jvm.JvmInline
+
+/**
+ * Represents the output configuration for Anthropic structured output.
+ *
+ * @property format The output format configuration, currently supporting JSON schema.
+ */
+@InternalLLMClientApi
+@Serializable
+public data class AnthropicOutputConfig(
+    val format: AnthropicOutputFormat
+)
+
+/**
+ * Represents the output format for Anthropic structured output.
+ * Currently supports JSON schema format for constraining model output.
+ */
+@InternalLLMClientApi
+@Serializable
+@JsonClassDiscriminator("type")
+public sealed interface AnthropicOutputFormat {
+    /**
+     * JSON schema output format that constrains model output to match a given schema.
+     *
+     * @property schema The JSON schema that the model output must conform to.
+     */
+    @Serializable
+    @SerialName("json_schema")
+    public data class JsonSchema(
+        val schema: JsonObject
+    ) : AnthropicOutputFormat
+}
 
 /**
  * Represents a request for an Anthropic message-based interaction.
@@ -18,8 +50,13 @@ import kotlinx.serialization.json.JsonObject
  * @property model The identifier of the Anthropic model to be used for processing the request.
  * @property messages A list of messages constituting the dialogue. Each message contains a role and corresponding content.
  * @property maxTokens The maximum number of tokens to generate in the response. Defaults to 2048.
+ * @property cacheControl Top-level cache control for **automatic caching**. When set, the system automatically
+ *   applies the cache breakpoint to the last cacheable block in the prompt, without requiring individual
+ *   content blocks to have `cache_control` markers. Use this instead of per-block cache control for
+ *   multi-turn conversations where the system should manage breakpoints automatically.
  * @property container Container identifier for reuse across requests.
  * @property mcpServers MCP servers to be used in this request
+ * @property outputConfig Optional output configuration for structured output (JSON schema).
  * @property serviceTier Determines whether to use priority capacity (if available) or standard capacity for this request.
  * @property stopSequence Custom text sequences that will cause the model to stop generating.
  * @property stream Whether responses should be returned as a stream. Defaults to false.
@@ -39,9 +76,12 @@ public data class AnthropicMessageRequest(
     @SerialName("max_tokens")
     @EncodeDefault
     val maxTokens: Int = MAX_TOKENS_DEFAULT,
+    val cacheControl: AnthropicCacheControl? = null,
     val container: String? = null,
     @SerialName("mcp_servers")
     val mcpServers: List<AnthropicMCPServerURLDefinition>? = null,
+    @SerialName("output_config")
+    val outputConfig: AnthropicOutputConfig? = null,
     @SerialName("service_tier")
     val serviceTier: AnthropicServiceTier? = null,
     @SerialName("stop_sequence")
@@ -117,14 +157,63 @@ public sealed interface AnthropicMessage {
  *
  * @property text The content of the message.
  * @property type The type of message, defaulted to "text".
+ * @property cacheControl Optional cache control directive for prompt caching.
+ *   When set, everything up to and including this system message is eligible for caching.
  */
 @InternalLLMClientApi
 @Serializable
 public data class SystemAnthropicMessage(
     val text: String,
     @EncodeDefault
-    val type: String = "text"
+    val type: String = "text",
+    val cacheControl: AnthropicCacheControl? = null
 )
+
+/**
+ * Controls caching behavior for a content block.
+ *
+ * When applied to a content block, everything up to and including that block is stored in the
+ * prompt cache. Subsequent requests that include the same prefix can read from the cache instead
+ * of reprocessing the tokens, which reduces latency and cost.
+ *
+ * See [Anthropic prompt caching docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
+ */
+@InternalLLMClientApi
+@Serializable
+@JsonClassDiscriminator("type")
+public sealed interface AnthropicCacheControl {
+    /**
+     * Ephemeral cache type.
+     *
+     * Caches the prompt prefix up to and including the block this is attached to.
+     * Cache entries are reused across requests that share the same prefix within the TTL window.
+     *
+     * @property ttl Optional time-to-live for the cache entry.
+     *   - `null` (default): 5-minute TTL at 1.25× base input token price.
+     *   - `"1h"`: 1-hour TTL at 2× base input token price.
+     */
+    @Serializable
+    @SerialName("ephemeral")
+    public data class Ephemeral(
+        val ttl: CacheTtl? = null
+    ) : AnthropicCacheControl
+}
+
+/**
+ * Represents time-to-live (TTL) for cache entries.
+ *
+ * This sealed class defines different TTL options for cache entries, each with a specific duration.
+ * The duration is represented as a string, and the class provides a serialization annotation
+ * to support interoperability with serialization formats.
+ */
+@InternalLLMClientApi
+@JvmInline
+@Serializable
+public value class CacheTtl(public val value: String) {
+    public companion object {
+        public val OneHour: CacheTtl = CacheTtl("1h")
+    }
+}
 
 /**
  * Represents content that can be processed or generated by Anthropic systems.
@@ -145,10 +234,12 @@ public sealed interface AnthropicContent {
      * with the discriminator "text" to identify their type in the context of polymorphic serialization.
      *
      * @property text The textual content being represented.
+     * @property cacheControl Optional cache control directive for explicit breakpoint prompt caching.
+     *   When set on the last content block in the list, all content blocks are eligible for caching.
      */
     @Serializable
     @SerialName("text")
-    public data class Text(val text: String) : AnthropicContent
+    public data class Text(val text: String, val cacheControl: AnthropicCacheControl? = null) : AnthropicContent
 
     /**
      * Represents a thinking process.
@@ -169,10 +260,12 @@ public sealed interface AnthropicContent {
      * such as via URLs or base64-encoded strings.
      *
      * @property source The source of the image data.
+     * @property cacheControl Optional cache control directive for explicit breakpoint prompt caching.
+     *   When set on the last content block in the list, all content blocks are eligible for caching.
      */
     @Serializable
     @SerialName("image")
-    public data class Image(val source: ImageSource) : AnthropicContent
+    public data class Image(val source: ImageSource, val cacheControl: AnthropicCacheControl? = null) : AnthropicContent
 
     /**
      * Represents a document that originates from a specified source.
@@ -182,7 +275,7 @@ public sealed interface AnthropicContent {
      */
     @Serializable
     @SerialName("document")
-    public data class Document(val source: DocumentSource) : AnthropicContent
+    public data class Document(val source: DocumentSource, val cacheControl: AnthropicCacheControl? = null) : AnthropicContent
 
     /**
      * Represents the usage of a tool in a structured format.
@@ -196,13 +289,16 @@ public sealed interface AnthropicContent {
      * @property id A unique identifier for the tool usage.
      * @property name The name of the tool being used.
      * @property input A JSON object containing input parameters for the tool's operation.
+     * @property cacheControl Optional cache control directive for explicit breakpoint prompt caching.
+     *   When set on the last content block in the list, all content blocks are eligible for caching.
      */
     @Serializable
     @SerialName("tool_use")
     public data class ToolUse(
         val id: String,
         val name: String,
-        val input: JsonObject
+        val input: JsonObject,
+        val cacheControl: AnthropicCacheControl? = null
     ) : AnthropicContent
 
     /**
@@ -210,12 +306,18 @@ public sealed interface AnthropicContent {
      *
      * @property toolUseId The unique identifier of the invoked tool for which this result corresponds.
      * @property content The output or result generated by the tool invocation.
+     * @property isError Whether this tool result represents an error. When true, Anthropic will treat
+     *   the content as an error message. Null means not an error (field omitted from the request).
+     * @property cacheControl Optional cache control directive for explicit breakpoint prompt caching.
+     *   When set on the last content block in the list, all content blocks are eligible for caching.
      */
     @Serializable
     @SerialName("tool_result")
     public data class ToolResult(
         val toolUseId: String,
-        val content: String
+        val content: String,
+        val isError: Boolean,
+        val cacheControl: AnthropicCacheControl? = null
     ) : AnthropicContent
 }
 
@@ -394,13 +496,16 @@ public sealed interface AnthropicThinking {
  * @property name The unique name of the tool.
  * @property description A human-readable description of the tool's purpose or functionality.
  * @property inputSchema The schema representing the structure of the input required by the tool.
+ * @property cacheControl Optional cache control directive for explicit breakpoint prompt caching.
+ *   When set on the last tool in the list, all tool definitions are eligible for caching.
  */
 @InternalLLMClientApi
 @Serializable
 public data class AnthropicTool(
     val name: String,
     val description: String,
-    val inputSchema: AnthropicToolSchema
+    val inputSchema: AnthropicToolSchema,
+    val cacheControl: AnthropicCacheControl? = null
 )
 
 /**
@@ -459,6 +564,10 @@ public data class AnthropicResponse(
  *
  * @property inputTokens The number of tokens sent as input to the LLM. Optional in streaming responses.
  * @property outputTokens The number of tokens received as output from the LLM. Optional in streaming responses.
+ * @property cacheReadInputTokens The number of tokens read from the prompt cache. Present when prompt
+ *   caching is used and an existing cache entry was hit.
+ * @property cacheCreationInputTokens The number of tokens written to the prompt cache. Present when prompt
+ *   caching is used and a new cache entry was created.
  *
  * Note: This API is marked with [InternalLLMClientApi] and is intended for internal use only.
  */
@@ -467,6 +576,8 @@ public data class AnthropicResponse(
 public data class AnthropicUsage(
     val inputTokens: Int? = null,
     val outputTokens: Int? = null,
+    val cacheReadInputTokens: Int? = null,
+    val cacheCreationInputTokens: Int? = null
 )
 
 /**
@@ -550,6 +661,7 @@ public enum class AnthropicStreamEventType(public val value: String) {
 public enum class AnthropicStreamDeltaContentType(public val value: String) {
     TEXT_DELTA("text_delta"),
     INPUT_JSON_DELTA("input_json_delta"),
+    THINKING_DELTA("thinking_delta"),
 }
 
 /**

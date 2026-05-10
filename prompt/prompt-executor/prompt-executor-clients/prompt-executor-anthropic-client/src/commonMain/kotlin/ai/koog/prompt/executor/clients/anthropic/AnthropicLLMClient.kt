@@ -2,6 +2,7 @@ package ai.koog.prompt.executor.clients.anthropic
 
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.ToolParameterType
+import ai.koog.agents.core.tools.annotations.InternalAgentToolsApi
 import ai.koog.http.client.KoogHttpClient
 import ai.koog.http.client.ktor.fromKtorClient
 import ai.koog.prompt.dsl.ModerationResult
@@ -14,6 +15,8 @@ import ai.koog.prompt.executor.clients.anthropic.models.AnthropicMessage
 import ai.koog.prompt.executor.clients.anthropic.models.AnthropicMessageRequest
 import ai.koog.prompt.executor.clients.anthropic.models.AnthropicMessageRequestSerializer
 import ai.koog.prompt.executor.clients.anthropic.models.AnthropicModelsResponse
+import ai.koog.prompt.executor.clients.anthropic.models.AnthropicOutputConfig
+import ai.koog.prompt.executor.clients.anthropic.models.AnthropicOutputFormat
 import ai.koog.prompt.executor.clients.anthropic.models.AnthropicResponse
 import ai.koog.prompt.executor.clients.anthropic.models.AnthropicStreamDeltaContentType
 import ai.koog.prompt.executor.clients.anthropic.models.AnthropicStreamEventType
@@ -22,43 +25,44 @@ import ai.koog.prompt.executor.clients.anthropic.models.AnthropicTool
 import ai.koog.prompt.executor.clients.anthropic.models.AnthropicToolChoice
 import ai.koog.prompt.executor.clients.anthropic.models.AnthropicToolSchema
 import ai.koog.prompt.executor.clients.anthropic.models.AnthropicUsage
+import ai.koog.prompt.executor.clients.anthropic.models.CacheTtl
 import ai.koog.prompt.executor.clients.anthropic.models.DocumentSource
 import ai.koog.prompt.executor.clients.anthropic.models.ImageSource
 import ai.koog.prompt.executor.clients.anthropic.models.SystemAnthropicMessage
+import ai.koog.prompt.executor.clients.anthropic.structure.AnthropicBasicJsonSchemaGenerator
+import ai.koog.prompt.executor.clients.anthropic.structure.AnthropicStandardJsonSchemaGenerator
 import ai.koog.prompt.executor.clients.modelsById
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.AttachmentContent
+import ai.koog.prompt.message.CacheControl
 import ai.koog.prompt.message.ContentPart
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
+import ai.koog.prompt.message.require
 import ai.koog.prompt.params.LLMParams
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.prompt.streaming.buildStreamFrameFlow
+import ai.koog.prompt.streaming.requireEndFrame
+import ai.koog.utils.time.KoogClock
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.plugins.defaultRequest
-import io.ktor.client.plugins.sse.SSE
-import io.ktor.client.request.header
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNamingStrategy
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import kotlin.jvm.JvmOverloads
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
+import ai.koog.prompt.executor.clients.anthropic.models.AnthropicCacheControl as AnthropicCacheControlBlock
 
 /**
  * Represents the settings for configuring an Anthropic client, including model mapping, base URL, and API version.
@@ -84,53 +88,64 @@ public class AnthropicClientSettings(
  * It leverages Kotlin Coroutines to handle asynchronous operations and provides full support for configuring HTTP
  * requests, including timeout handling and JSON serialization.
  *
- * @constructor Creates an instance of the AnthropicSuspendableDirectClient.
- * @param apiKey The API key required to authenticate with the Anthropic service.
  * @param settings Configurable settings for the Anthropic client, which include the base URL and other options.
- * @param baseClient An optional custom configuration for the underlying HTTP client, defaulting to a Ktor client.
+ * @param httpClient A preconfigured Koog HTTP client used for API calls. Must have authentication and other
+ *   request defaults already embedded. To use a Ktor-backed client with standard defaults, use the secondary
+ *   constructor that accepts an API key and an [io.ktor.client.HttpClient].
  * @param clock Clock instance used for tracking response metadata timestamps.
  */
 public open class AnthropicLLMClient @JvmOverloads constructor(
-    private val apiKey: String,
     private val settings: AnthropicClientSettings = AnthropicClientSettings(),
-    baseClient: HttpClient = HttpClient(),
-    private val clock: Clock = Clock.System
-) : LLMClient {
+    protected val httpClient: KoogHttpClient,
+    private val clock: KoogClock = KoogClock.System
+) : LLMClient() {
 
     private companion object {
+        private const val ANTHROPIC_CLIENT_NAME = "AnthropicLLMClient"
+
         private val logger = KotlinLogging.logger { }
+        private val json = Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+            encodeDefaults = true // Ensure default values are included in serialization
+            explicitNulls = false
+            namingStrategy = JsonNamingStrategy.SnakeCase
+        }
+
+        private fun createConfiguredHttpClient(
+            apiKey: String,
+            settings: AnthropicClientSettings,
+            baseClient: HttpClient = HttpClient()
+        ): KoogHttpClient = KoogHttpClient.fromKtorClient(
+            clientName = ANTHROPIC_CLIENT_NAME,
+            logger = logger,
+            baseClient = baseClient,
+            baseUrl = settings.baseUrl,
+            requestTimeoutMillis = settings.timeoutConfig.requestTimeoutMillis,
+            connectTimeoutMillis = settings.timeoutConfig.connectTimeoutMillis,
+            socketTimeoutMillis = settings.timeoutConfig.socketTimeoutMillis,
+            json = json,
+            headers = mapOf(
+                "x-api-key" to apiKey,
+                "anthropic-version" to settings.apiVersion
+            ),
+        )
     }
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        encodeDefaults = true // Ensure default values are included in serialization
-        explicitNulls = false
-        namingStrategy = JsonNamingStrategy.SnakeCase
-    }
-
-    // Configures HTTP client with timeouts, headers, and JSON handling
-    protected val httpClient: KoogHttpClient = KoogHttpClient.fromKtorClient(
-        clientName = clientName,
-        logger = logger,
-        baseClient = baseClient
-    ) {
-        defaultRequest {
-            url(settings.baseUrl)
-            contentType(ContentType.Application.Json)
-            header("x-api-key", apiKey)
-            header("anthropic-version", settings.apiVersion)
-        }
-        install(SSE)
-        install(ContentNegotiation) {
-            json(json)
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = settings.timeoutConfig.requestTimeoutMillis // Increase timeout to 60 seconds
-            connectTimeoutMillis = settings.timeoutConfig.connectTimeoutMillis
-            socketTimeoutMillis = settings.timeoutConfig.socketTimeoutMillis
-        }
-    }
+    /**
+     * Secondary constructor for creating an Anthropic client from a base Ktor HTTP client.
+     */
+    @JvmOverloads
+    public constructor(
+        apiKey: String,
+        settings: AnthropicClientSettings = AnthropicClientSettings(),
+        baseClient: HttpClient = HttpClient(),
+        clock: KoogClock = KoogClock.System
+    ) : this(
+        settings = settings,
+        httpClient = createConfiguredHttpClient(apiKey, settings, baseClient),
+        clock = clock
+    )
 
     /**
      * Provides the specific Large Language Model (LLM) provider used by the client.
@@ -140,6 +155,8 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
      *
      * @return The LLM provider associated with this client, specifically `LLMProvider.Anthropic`.
      */
+    override val clientName: String = ANTHROPIC_CLIENT_NAME
+
     override fun llmProvider(): LLMProvider = LLMProvider.Anthropic
 
     override suspend fun execute(prompt: Prompt, model: LLModel, tools: List<ToolDescriptor>): List<Message.Response> {
@@ -214,15 +231,30 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                         AnthropicStreamEventType.CONTENT_BLOCK_START.value -> {
                             when (val contentBlock = response.contentBlock) {
                                 is AnthropicContent.Text -> {
-                                    emitAppend(contentBlock.text)
+                                    emitTextDelta(
+                                        text = contentBlock.text,
+                                        index = response.index
+                                            ?: throw LLMClientException(
+                                                clientName,
+                                                "Text index is missing"
+                                            )
+                                    )
                                 }
 
                                 is AnthropicContent.ToolUse -> {
-                                    upsertToolCall(
-                                        index = response.index
-                                            ?: throw LLMClientException(clientName, "Tool index is missing"),
+                                    emitToolCallDelta(
                                         id = contentBlock.id,
                                         name = contentBlock.name,
+                                        index = response.index
+                                            ?: throw LLMClientException(clientName, "Tool index is missing"),
+                                    )
+                                }
+
+                                is AnthropicContent.Thinking -> {
+                                    emitReasoningDelta(
+                                        text = contentBlock.thinking,
+                                        index = response.index
+                                            ?: throw LLMClientException(clientName, "Thinking index is missing")
                                     )
                                 }
 
@@ -238,19 +270,29 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                                 // Handles deltas for tool calls and text
 
                                 when (delta.type) {
-                                    AnthropicStreamDeltaContentType.INPUT_JSON_DELTA.value -> {
-                                        upsertToolCall(
+                                    AnthropicStreamDeltaContentType.TEXT_DELTA.value -> {
+                                        emitTextDelta(
+                                            delta.text
+                                                ?: throw LLMClientException(clientName, "Text delta is missing"),
                                             index = response.index
-                                                ?: throw LLMClientException(clientName, "Tool index is missing"),
-                                            args = delta.partialJson
-                                                ?: throw LLMClientException(clientName, "Tool args are missing")
                                         )
                                     }
 
-                                    AnthropicStreamDeltaContentType.TEXT_DELTA.value -> {
-                                        emitAppend(
-                                            delta.text
-                                                ?: throw LLMClientException(clientName, "Text delta is missing")
+                                    AnthropicStreamDeltaContentType.INPUT_JSON_DELTA.value -> {
+                                        emitToolCallDelta(
+                                            args = delta.partialJson
+                                                ?: throw LLMClientException(clientName, "Tool args are missing"),
+                                            index = response.index
+                                                ?: throw LLMClientException(clientName, "Tool index is missing"),
+                                        )
+                                    }
+
+                                    AnthropicStreamDeltaContentType.THINKING_DELTA.value -> {
+                                        emitReasoningDelta(
+                                            text = delta.thinking
+                                                ?: throw LLMClientException(clientName, "Reasoning delta is missing"),
+                                            index = response.index
+                                                ?: throw LLMClientException(clientName, "Reasoning index is missing")
                                         )
                                     }
 
@@ -262,7 +304,21 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                         }
 
                         AnthropicStreamEventType.CONTENT_BLOCK_STOP.value -> {
-                            tryEmitPendingToolCall()
+                            response.delta?.let { delta ->
+                                when (delta.type) {
+                                    AnthropicStreamDeltaContentType.TEXT_DELTA.value -> {
+                                        tryEmitPendingText()
+                                    }
+
+                                    AnthropicStreamDeltaContentType.INPUT_JSON_DELTA.value -> {
+                                        tryEmitPendingToolCall()
+                                    }
+
+                                    AnthropicStreamDeltaContentType.THINKING_DELTA.value -> {
+                                        tryEmitPendingReasoning()
+                                    }
+                                }
+                            }
                         }
 
                         AnthropicStreamEventType.MESSAGE_DELTA.value -> {
@@ -295,6 +351,13 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                     cause = e
                 )
             }
+        }.requireEndFrame()
+    }
+
+    internal fun CacheControl.toAnthropicCacheControl(): AnthropicCacheControlBlock {
+        return when (this.require<AnthropicCacheControl>()) {
+            AnthropicCacheControl.Default -> AnthropicCacheControlBlock.Ephemeral()
+            AnthropicCacheControl.OneHour -> AnthropicCacheControlBlock.Ephemeral(CacheTtl.OneHour)
         }
     }
 
@@ -312,7 +375,12 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
             when (message) {
                 is Message.System -> {
                     if (!message.content.isEmpty()) {
-                        systemMessage.add(SystemAnthropicMessage(message.content))
+                        systemMessage.add(
+                            SystemAnthropicMessage(
+                                message.content,
+                                cacheControl = message.cacheControl?.toAnthropicCacheControl()
+                            )
+                        )
                     }
                 }
 
@@ -323,7 +391,12 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                 is Message.Assistant -> {
                     messages.add(
                         AnthropicMessage.Assistant(
-                            content = listOf(AnthropicContent.Text(message.content))
+                            content = listOf(
+                                AnthropicContent.Text(
+                                    text = message.content,
+                                    cacheControl = message.cacheControl?.toAnthropicCacheControl()
+                                )
+                            ),
                         )
                     )
                 }
@@ -337,7 +410,7 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                                         ?: throw IllegalArgumentException("Encrypted signature is required for reasoning messages but was null"),
                                     thinking = message.content
                                 )
-                            )
+                            ),
                         )
                     )
                 }
@@ -348,9 +421,11 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                             content = listOf(
                                 AnthropicContent.ToolResult(
                                     toolUseId = message.id ?: "",
-                                    content = message.content
+                                    content = message.content,
+                                    isError = message.isError,
+                                    cacheControl = message.cacheControl?.toAnthropicCacheControl()
                                 )
-                            )
+                            ),
                         )
                     )
                 }
@@ -363,9 +438,9 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                                 AnthropicContent.ToolUse(
                                     id = message.id ?: Uuid.random().toString(),
                                     name = message.tool,
-                                    input = Json.parseToJsonElement(message.content).jsonObject
+                                    input = Json.parseToJsonElement(message.content).jsonObject,
                                 )
-                            )
+                            ),
                         )
                     )
                 }
@@ -389,7 +464,8 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                 inputSchema = AnthropicToolSchema(
                     properties = JsonObject(properties),
                     required = tool.requiredParameters.map { it.name }
-                )
+                ),
+                cacheControl = tool.cacheControl?.toAnthropicCacheControl()
             )
         }
 
@@ -421,8 +497,13 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
             null -> null
         }
 
-        require(anthropicParams.schema == null) {
-            "Anthropic does not currently support native structured output."
+        val outputConfig = anthropicParams.schema?.let { schema ->
+            require(schema is LLMParams.Schema.JSON) {
+                "Anthropic only supports JSON schemas for structured output"
+            }
+            AnthropicOutputConfig(
+                format = AnthropicOutputFormat.JsonSchema(schema = schema.schema)
+            )
         }
 
         // Always include max_tokens as it's required by the API
@@ -430,8 +511,10 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
             model = settings.modelVersionsMap[model] ?: throw IllegalArgumentException("Unsupported model: $model"),
             messages = messages,
             maxTokens = anthropicParams.maxTokens ?: AnthropicMessageRequest.MAX_TOKENS_DEFAULT,
+            cacheControl = anthropicParams.cacheControl?.toAnthropicCacheControl(),
             container = anthropicParams.container,
             mcpServers = anthropicParams.mcpServers,
+            outputConfig = outputConfig,
             serviceTier = anthropicParams.serviceTier,
             stopSequence = anthropicParams.stopSequences,
             stream = stream,
@@ -439,7 +522,7 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
             temperature = anthropicParams.temperature,
             thinking = anthropicParams.thinking,
             toolChoice = toolChoice,
-            tools = tools, // Always provide a list for tools
+            tools = tools,
             topK = anthropicParams.topK,
             topP = anthropicParams.topP,
             additionalProperties = anthropicParams.additionalProperties
@@ -452,7 +535,12 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
         val listOfContent = buildList {
             parts.forEach { part ->
                 when (part) {
-                    is ContentPart.Text -> add(AnthropicContent.Text(part.text))
+                    is ContentPart.Text -> add(
+                        AnthropicContent.Text(
+                            part.text,
+                            cacheControl = cacheControl?.toAnthropicCacheControl()
+                        )
+                    )
 
                     is ContentPart.Image -> {
                         require(model.supports(LLMCapability.Vision.Image)) {
@@ -461,14 +549,16 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
 
                         val imageSource: ImageSource = when (val content = part.content) {
                             is AttachmentContent.URL -> ImageSource.Url(content.url)
+
                             is AttachmentContent.Binary -> ImageSource.Base64(content.asBase64(), part.mimeType)
+
                             else -> throw LLMClientException(
                                 clientName,
                                 "Unsupported image attachment content: ${content::class}"
                             )
                         }
 
-                        add(AnthropicContent.Image(imageSource))
+                        add(AnthropicContent.Image(imageSource, cacheControl = cacheControl?.toAnthropicCacheControl()))
                     }
 
                     is ContentPart.File -> {
@@ -478,6 +568,7 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
 
                         val documentSource: DocumentSource = when (val content = part.content) {
                             is AttachmentContent.URL -> DocumentSource.Url(content.url)
+
                             is AttachmentContent.Binary -> DocumentSource.Base64(
                                 content.asBase64(),
                                 part.mimeType
@@ -489,7 +580,12 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                             )
                         }
 
-                        add(AnthropicContent.Document(documentSource))
+                        add(
+                            AnthropicContent.Document(
+                                documentSource,
+                                cacheControl = cacheControl?.toAnthropicCacheControl()
+                            )
+                        )
                     }
 
                     else -> throw LLMClientException(
@@ -508,11 +604,20 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
         val inputTokensCount = response.usage?.inputTokens
         val outputTokensCount = response.usage?.outputTokens
         val totalTokensCount = response.usage?.let { it.inputTokens?.plus(it.outputTokens ?: 0) ?: it.outputTokens }
+        val cacheCreationInputTokens = response.usage?.cacheCreationInputTokens
+        val cacheReadInputTokens = response.usage?.cacheReadInputTokens
+
+        val cacheMetadata = buildJsonObject {
+            cacheCreationInputTokens?.let { put("cacheCreationInputTokens", it) }
+            cacheReadInputTokens?.let { put("cacheReadInputTokens", it) }
+        }.takeIf { it.isNotEmpty() }
+
         val metaInfo = ResponseMetaInfo.create(
             clock,
             totalTokensCount = totalTokensCount,
             inputTokensCount = inputTokensCount,
             outputTokensCount = outputTokensCount,
+            metadata = cacheMetadata,
         )
 
         val responses = response.content.map { content ->
@@ -552,6 +657,7 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
         return when {
             // Fix the situation when the model decides to both call tools and talk
             responses.any { it is Message.Tool.Call } -> responses.filterIsInstance<Message.Tool.Call>()
+
             // If no messages where returned, return an empty message and check stopReason
             responses.isEmpty() -> listOf(
                 Message.Assistant(
@@ -562,9 +668,10 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                         totalTokensCount = totalTokensCount,
                         inputTokensCount = inputTokensCount,
                         outputTokensCount = outputTokensCount,
-                    )
+                    ),
                 )
             )
+
             // Just return responses
             else -> responses
         }
@@ -573,13 +680,19 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
     /**
      * Helper function to get the type map for a parameter type without using smart casting
      */
+    @OptIn(InternalAgentToolsApi::class)
     private fun getTypeMapForParameter(type: ToolParameterType): JsonObject {
         return when (type) {
             ToolParameterType.Boolean -> JsonObject(mapOf("type" to JsonPrimitive("boolean")))
+
             ToolParameterType.Float -> JsonObject(mapOf("type" to JsonPrimitive("number")))
+
             ToolParameterType.Integer -> JsonObject(mapOf("type" to JsonPrimitive("integer")))
+
             ToolParameterType.String -> JsonObject(mapOf("type" to JsonPrimitive("string")))
+
             ToolParameterType.Null -> JsonObject(mapOf("type" to JsonPrimitive("null")))
+
             is ToolParameterType.Enum -> JsonObject(
                 mapOf(
                     "type" to JsonPrimitive("string"),
@@ -629,10 +742,11 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
                 JsonObject(objectMap)
             }
 
-            is ToolParameterType.AnyOf -> throw LLMClientException(
-                clientName,
-                "AnyOf type is not supported"
-            )
+            is ToolParameterType.AnyOf -> {
+                // FIXME this is hack, represent union types properly in ToolDescriptor
+                type.hackRepresentAnyOfWithNullAsTypeUnionWithNull(::getTypeMapForParameter)
+                    ?: throw LLMClientException(clientName, "AnyOf type is not supported")
+            }
         }
     }
 
@@ -649,18 +763,48 @@ public open class AnthropicLLMClient @JvmOverloads constructor(
         return response.data.map { modelsById[it.id] ?: LLModel(id = it.id, provider = LLMProvider.Anthropic) }
     }
 
+    override fun getBasicJsonSchemaGenerator(): AnthropicBasicJsonSchemaGenerator {
+        return AnthropicBasicJsonSchemaGenerator
+    }
+
+    override fun getStandardJsonSchemaGenerator(): AnthropicStandardJsonSchemaGenerator {
+        return AnthropicStandardJsonSchemaGenerator
+    }
+
     /**
-     * Attempts to moderate the content of a given prompt using a specific language model.
-     * This method is not supported by the Anthropic API and will always throw an exception.
+     * Moderation is not supported by the Anthropic API.
      *
-     * @param prompt The prompt to be moderated, containing messages and optional configuration parameters.
-     * @param model The language model to use for moderation.
-     * @return This method does not return a value as it always throws an exception.
-     * @throws UnsupportedOperationException Always thrown, as moderation is not supported by the Anthropic API.
+     * @throws UnsupportedOperationException Always thrown.
      */
     public override suspend fun moderate(prompt: Prompt, model: LLModel): ModerationResult {
         logger.warn { "Moderation is not supported by Anthropic API" }
         throw UnsupportedOperationException("Moderation is not supported by Anthropic API.")
+    }
+
+    /**
+     * Embedding is not supported by the Anthropic API.
+     *
+     * @throws UnsupportedOperationException Always thrown.
+     */
+    override suspend fun embed(
+        text: String,
+        model: LLModel
+    ): List<Double> {
+        logger.warn { "Embedding is not supported by Anthropic API" }
+        throw UnsupportedOperationException("Embedding is not supported by Anthropic API.")
+    }
+
+    /**
+     * Batch embedding is not supported by the Anthropic API.
+     *
+     * @throws UnsupportedOperationException Always thrown.
+     */
+    override suspend fun embed(
+        inputs: List<String>,
+        model: LLModel
+    ): List<List<Double>> {
+        logger.warn { "Embedding is not supported by Anthropic API" }
+        throw UnsupportedOperationException("Embedding is not supported by Anthropic API.")
     }
 
     override fun close() {

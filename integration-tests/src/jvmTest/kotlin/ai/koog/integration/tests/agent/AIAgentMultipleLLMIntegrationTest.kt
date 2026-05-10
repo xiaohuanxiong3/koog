@@ -7,8 +7,10 @@ import ai.koog.agents.features.eventHandler.feature.EventHandler
 import ai.koog.agents.features.eventHandler.feature.EventHandlerConfig
 import ai.koog.integration.tests.agent.AIAgentTestBase.ReportingLLMClient.Event
 import ai.koog.integration.tests.utils.Models
+import ai.koog.integration.tests.utils.RetryUtils
 import ai.koog.integration.tests.utils.RetryUtils.withRetry
 import ai.koog.integration.tests.utils.TestCredentials.readTestAnthropicKeyFromEnv
+import ai.koog.integration.tests.utils.TestCredentials.readTestGoogleAIKeyFromEnv
 import ai.koog.integration.tests.utils.TestCredentials.readTestOpenAIKeyFromEnv
 import ai.koog.integration.tests.utils.annotations.Retry
 import ai.koog.integration.tests.utils.tools.CalculatorTool
@@ -18,6 +20,7 @@ import ai.koog.integration.tests.utils.tools.files.OperationResult
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
+import ai.koog.prompt.executor.clients.google.GoogleLLMClient
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.executor.llms.all.simpleAnthropicExecutor
@@ -26,6 +29,7 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.markdown.markdown
 import io.kotest.inspectors.shouldForAny
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -48,11 +52,12 @@ import kotlin.time.Duration.Companion.minutes
 class AIAgentMultipleLLMIntegrationTest : AIAgentTestBase() {
     companion object {
         @JvmStatic
-        fun getLatestModels(): Stream<LLModel> = AIAgentTestBase.getLatestModels()
+        fun getLatestModels(): Stream<LLModel> = latestModels()
     }
 
     private val openAIApiKey: String get() = readTestOpenAIKeyFromEnv()
     private val anthropicApiKey: String get() = readTestAnthropicKeyFromEnv()
+    private val googleApiKey: String get() = readTestGoogleAIKeyFromEnv()
 
     @Test
     @Retry(5)
@@ -70,9 +75,12 @@ class AIAgentMultipleLLMIntegrationTest : AIAgentTestBase() {
 
         val openAIClient = OpenAILLMClient(openAIApiKey).reportingTo(eventsChannel)
         val anthropicClient = AnthropicLLMClient(anthropicApiKey).reportingTo(eventsChannel)
+        val googleClient = GoogleLLMClient(googleApiKey).reportingTo(eventsChannel)
+
         val reportingExecutor = MultiLLMPromptExecutor(
             LLMProvider.OpenAI to openAIClient,
-            LLMProvider.Anthropic to anthropicClient
+            LLMProvider.Anthropic to anthropicClient,
+            LLMProvider.Google to googleClient,
         )
 
         val agent = createTestMultiLLMAgent(
@@ -141,6 +149,7 @@ class AIAgentMultipleLLMIntegrationTest : AIAgentTestBase() {
         runTest(timeout = 10.minutes) {
             Models.assumeAvailable(LLMProvider.OpenAI)
             Models.assumeAvailable(LLMProvider.Anthropic)
+            Models.assumeAvailable(LLMProvider.Google)
 
             val fs = MockFileSystem()
             val calledTools = mutableListOf<String>()
@@ -169,13 +178,14 @@ class AIAgentMultipleLLMIntegrationTest : AIAgentTestBase() {
             }
             val expectedToolName = CreateFile(fs).name
 
-            calledTools.shouldForAny { it == expectedToolName }
+            calledTools.shouldForAny { it shouldBeEqual expectedToolName }
         }
 
     @Test
     fun integration_testTerminationOnIterationsLimitExhaustion() = runTest(timeout = 10.minutes) {
         Models.assumeAvailable(LLMProvider.OpenAI)
         Models.assumeAvailable(LLMProvider.Anthropic)
+        Models.assumeAvailable(LLMProvider.Google)
 
         val fs = MockFileSystem()
         var errorMessage: String? = null
@@ -201,8 +211,9 @@ class AIAgentMultipleLLMIntegrationTest : AIAgentTestBase() {
     @Test
     fun integration_testAnthropicAgentEnumSerialization() {
         runTest(timeout = 10.minutes) {
-            val llmModel = AnthropicModels.Sonnet_4_5
+            val llmModel = AnthropicModels.Opus_4_6
             Models.assumeAvailable(llmModel.provider)
+            Models.assumeEnumToolCallsAreStable(llmModel, "Anthropic enum-tool serialization integration")
 
             AIAgent(
                 promptExecutor = simpleAnthropicExecutor(anthropicApiKey),
@@ -215,7 +226,7 @@ class AIAgentMultipleLLMIntegrationTest : AIAgentTestBase() {
                     install(EventHandler) {
                         onAgentExecutionFailed { eventContext ->
                             println(
-                                "error: ${eventContext.throwable.javaClass.simpleName}(${eventContext.throwable.message})\n${eventContext.throwable.stackTraceToString()}"
+                                "error: ${eventContext.error.javaClass.simpleName}(${eventContext.error.message})\n${eventContext.error.stackTraceToString()}"
                             )
                         }
                         onToolCallStarting { eventContext ->
@@ -289,6 +300,9 @@ class AIAgentMultipleLLMIntegrationTest : AIAgentTestBase() {
         val imageFile = File(testResourcesDir.toFile(), "test.png")
         imageFile.exists().shouldBeTrue()
 
+        val imageUrl = "https://cdn.jsdelivr.net/gh/JetBrains/koog@develop/integration-tests/src/jvmTest/resources/media/test.png"
+        RetryUtils.ensureUrlAccessible(imageUrl, testName = "remote image preflight")
+
         val prompt = prompt("example-prompt") {
             system("You are a professional helpful assistant.")
 
@@ -298,7 +312,7 @@ class AIAgentMultipleLLMIntegrationTest : AIAgentTestBase() {
                     br()
                     +"Please analyze this image and identify the image format if possible."
                 }
-                image("https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg")
+                image(imageUrl)
             }
         }
 

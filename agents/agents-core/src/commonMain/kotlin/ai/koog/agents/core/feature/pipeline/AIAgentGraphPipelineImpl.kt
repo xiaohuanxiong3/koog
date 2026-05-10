@@ -5,7 +5,7 @@ package ai.koog.agents.core.feature.pipeline
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.agent.context.AIAgentGraphContextBase
 import ai.koog.agents.core.agent.entity.AIAgentNodeBase
-import ai.koog.agents.core.agent.entity.AIAgentSubgraph
+import ai.koog.agents.core.agent.entity.AIAgentSubgraphBase
 import ai.koog.agents.core.agent.execution.AgentExecutionInfo
 import ai.koog.agents.core.annotation.InternalAgentsApi
 import ai.koog.agents.core.feature.AIAgentGraphFeature
@@ -16,12 +16,12 @@ import ai.koog.agents.core.feature.handler.node.NodeExecutionStartingContext
 import ai.koog.agents.core.feature.handler.subgraph.SubgraphExecutionCompletedContext
 import ai.koog.agents.core.feature.handler.subgraph.SubgraphExecutionFailedContext
 import ai.koog.agents.core.feature.handler.subgraph.SubgraphExecutionStartingContext
-import kotlinx.datetime.Clock
-import kotlin.reflect.KType
+import ai.koog.serialization.TypeToken
+import ai.koog.utils.time.KoogClock
 
 internal class AIAgentGraphPipelineImpl(
     agentConfig: AIAgentConfig,
-    clock: Clock = Clock.System,
+    clock: KoogClock = KoogClock.System,
     private val basePipelineDelegate: AIAgentPipelineImpl
 ) : AIAgentGraphPipelineAPI, AIAgentPipelineAPI by basePipelineDelegate {
 
@@ -33,7 +33,7 @@ internal class AIAgentGraphPipelineImpl(
         node: AIAgentNodeBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType
+        inputType: TypeToken
     ) {
         basePipelineDelegate.invokeRegisteredHandlersForEvent(
             eventType = AgentLifecycleEventType.NodeExecutionStarting,
@@ -47,9 +47,9 @@ internal class AIAgentGraphPipelineImpl(
         node: AIAgentNodeBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType,
+        inputType: TypeToken,
         output: Any?,
-        outputType: KType
+        outputType: TypeToken
     ) {
         basePipelineDelegate.invokeRegisteredHandlersForEvent(
             eventType = AgentLifecycleEventType.NodeExecutionCompleted,
@@ -63,12 +63,12 @@ internal class AIAgentGraphPipelineImpl(
         node: AIAgentNodeBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType,
-        throwable: Throwable
+        inputType: TypeToken,
+        error: Throwable
     ) {
         basePipelineDelegate.invokeRegisteredHandlersForEvent(
             eventType = AgentLifecycleEventType.NodeExecutionFailed,
-            context = NodeExecutionFailedContext(eventId, executionInfo, node, context, input, inputType, throwable)
+            context = NodeExecutionFailedContext(eventId, executionInfo, node, context, input, inputType, error)
         )
     }
 
@@ -79,10 +79,10 @@ internal class AIAgentGraphPipelineImpl(
     public override suspend fun onSubgraphExecutionStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        subgraph: AIAgentSubgraph<*, *>,
+        subgraph: AIAgentSubgraphBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType
+        inputType: TypeToken
     ) {
         basePipelineDelegate.invokeRegisteredHandlersForEvent(
             eventType = AgentLifecycleEventType.SubgraphExecutionStarting,
@@ -93,12 +93,12 @@ internal class AIAgentGraphPipelineImpl(
     public override suspend fun onSubgraphExecutionCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        subgraph: AIAgentSubgraph<*, *>,
+        subgraph: AIAgentSubgraphBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType,
+        inputType: TypeToken,
         output: Any?,
-        outputType: KType
+        outputType: TypeToken
     ) {
         basePipelineDelegate.invokeRegisteredHandlersForEvent(
             eventType = AgentLifecycleEventType.SubgraphExecutionCompleted,
@@ -118,15 +118,15 @@ internal class AIAgentGraphPipelineImpl(
     public override suspend fun onSubgraphExecutionFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        subgraph: AIAgentSubgraph<*, *>,
+        subgraph: AIAgentSubgraphBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType,
-        throwable: Throwable
+        inputType: TypeToken,
+        error: Throwable
     ) {
         basePipelineDelegate.invokeRegisteredHandlersForEvent(
             eventType = AgentLifecycleEventType.SubgraphExecutionFailed,
-            context = SubgraphExecutionFailedContext(eventId, executionInfo, subgraph, context, input, inputType, throwable)
+            context = SubgraphExecutionFailedContext(eventId, executionInfo, subgraph, context, input, inputType, error)
         )
     }
 

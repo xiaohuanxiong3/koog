@@ -1,7 +1,7 @@
 package ai.koog.agents.features.opentelemetry.integration.weave
 
 import ai.koog.agents.features.opentelemetry.OpenTelemetryTestAPI
-import ai.koog.agents.features.opentelemetry.attribute.SpanAttributes
+import ai.koog.agents.features.opentelemetry.attribute.GenAIAttributes
 import ai.koog.agents.features.opentelemetry.integration.TraceStructureTestBase
 import ai.koog.agents.features.opentelemetry.mock.TestGetWeatherTool
 import ai.koog.prompt.llm.LLModel
@@ -16,6 +16,9 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 @EnabledIfEnvironmentVariable(named = "WEAVE_API_KEY", matches = ".+")
 class WeaveTraceStructureTest :
     TraceStructureTestBase(openTelemetryConfigurator = { addWeaveExporter() }) {
+
+    override val inputTokensAttributeName: String = "gen_ai.usage.prompt_tokens"
+    override val outputTokensAttributeName: String = "gen_ai.usage.completion_tokens"
 
     override fun testLLMCallToolCallLLMCallGetExpectedInitialLLMCallSpanAttributes(
         model: LLModel,
@@ -51,20 +54,20 @@ class WeaveTraceStructureTest :
             "gen_ai.request.temperature" to temperature,
             "gen_ai.request.model" to model.id,
             "gen_ai.response.model" to model.id,
-            "gen_ai.usage.input_tokens" to 0L,
-            "gen_ai.usage.output_tokens" to 0L,
+            "gen_ai.usage.prompt_tokens" to 0L,
+            "gen_ai.usage.completion_tokens" to 0L,
             "gen_ai.input.messages" to inputMessages,
             "system_instructions" to systemInstructions,
             "gen_ai.output.messages" to outputMessages,
             "gen_ai.tool.definitions" to toolDefinitions,
-            "gen_ai.response.finish_reasons" to listOf(SpanAttributes.Response.FinishReasonType.ToolCalls.id),
+            "gen_ai.response.finish_reasons" to listOf(GenAIAttributes.Response.FinishReasonType.ToolCalls.id),
 
             "gen_ai.prompt.0.role" to Message.Role.System.name.lowercase(),
             "gen_ai.prompt.0.content" to systemPrompt,
             "gen_ai.prompt.1.role" to Message.Role.User.name.lowercase(),
             "gen_ai.prompt.1.content" to userPrompt,
             "gen_ai.completion.0.role" to Message.Role.Assistant.name.lowercase(),
-            "gen_ai.completion.0.finish_reason" to SpanAttributes.Response.FinishReasonType.ToolCalls.id,
+            "gen_ai.completion.0.finish_reason" to GenAIAttributes.Response.FinishReasonType.ToolCalls.id,
             // Weave-specific: tool_calls attributes without content for initial LLM call
             "gen_ai.completion.0.tool_calls.0.id" to toolCallId,
             "gen_ai.completion.0.tool_calls.0.type" to "function",
@@ -119,13 +122,13 @@ class WeaveTraceStructureTest :
             "gen_ai.request.temperature" to temperature,
             "gen_ai.request.model" to model.id,
             "gen_ai.response.model" to model.id,
-            "gen_ai.usage.input_tokens" to 0L,
-            "gen_ai.usage.output_tokens" to 0L,
+            "gen_ai.usage.prompt_tokens" to 0L,
+            "gen_ai.usage.completion_tokens" to 0L,
             "gen_ai.input.messages" to inputMessages,
             "system_instructions" to systemInstructions,
             "gen_ai.output.messages" to outputMessages,
             "gen_ai.tool.definitions" to toolDefinitions,
-            "gen_ai.response.finish_reasons" to listOf(SpanAttributes.Response.FinishReasonType.Stop.id),
+            "gen_ai.response.finish_reasons" to listOf(GenAIAttributes.Response.FinishReasonType.Stop.id),
 
             "gen_ai.prompt.0.role" to Message.Role.System.name.lowercase(),
             "gen_ai.prompt.0.content" to systemPrompt,
@@ -133,7 +136,7 @@ class WeaveTraceStructureTest :
             "gen_ai.prompt.1.content" to userPrompt,
             // Weave-specific: tool call appears as assistant message in prompt history
             "gen_ai.prompt.2.role" to Message.Role.Assistant.name.lowercase(),
-            "gen_ai.prompt.2.finish_reason" to SpanAttributes.Response.FinishReasonType.ToolCalls.id,
+            "gen_ai.prompt.2.finish_reason" to GenAIAttributes.Response.FinishReasonType.ToolCalls.id,
             "gen_ai.prompt.2.tool_calls.0.id" to toolCallId,
             "gen_ai.prompt.2.tool_calls.0.type" to "function",
             "gen_ai.prompt.2.tool_calls.0.function" to "{\"name\":\"${TestGetWeatherTool.name}\",\"arguments\":\"{\\\"location\\\":\\\"Paris\\\"}\"}",
@@ -183,20 +186,20 @@ class WeaveTraceStructureTest :
             "gen_ai.request.max_tokens" to maxTokens,
             "gen_ai.request.model" to model.id,
             "gen_ai.response.model" to model.id,
-            "gen_ai.usage.input_tokens" to 0L,
-            "gen_ai.usage.output_tokens" to outputTokens,
+            "gen_ai.usage.prompt_tokens" to 0L,
+            "gen_ai.usage.completion_tokens" to outputTokens,
             "gen_ai.input.messages" to inputMessages,
             "system_instructions" to systemInstructions,
             "gen_ai.output.messages" to outputMessages,
             "gen_ai.tool.definitions" to toolDefinitions,
-            "gen_ai.response.finish_reasons" to listOf(SpanAttributes.Response.FinishReasonType.ToolCalls.id),
+            "gen_ai.response.finish_reasons" to listOf(GenAIAttributes.Response.FinishReasonType.ToolCalls.id),
 
             "gen_ai.prompt.0.role" to Message.Role.System.name.lowercase(),
             "gen_ai.prompt.0.content" to systemPrompt,
             "gen_ai.prompt.1.role" to Message.Role.User.name.lowercase(),
             "gen_ai.prompt.1.content" to userPrompt,
             "gen_ai.completion.0.role" to Message.Role.Assistant.name.lowercase(),
-            "gen_ai.completion.0.finish_reason" to SpanAttributes.Response.FinishReasonType.ToolCalls.id,
+            "gen_ai.completion.0.finish_reason" to GenAIAttributes.Response.FinishReasonType.ToolCalls.id,
             // Weave-specific: tool_calls attributes without content for initial LLM call
             "gen_ai.completion.0.tool_calls.0.id" to toolCallId,
             "gen_ai.completion.0.tool_calls.0.type" to "function",
@@ -266,13 +269,13 @@ class WeaveTraceStructureTest :
             "gen_ai.request.model" to model.id,
             "gen_ai.request.max_tokens" to maxTokens,
             "gen_ai.response.model" to model.id,
-            "gen_ai.usage.input_tokens" to 0L,
-            "gen_ai.usage.output_tokens" to outputTokens,
+            "gen_ai.usage.prompt_tokens" to 0L,
+            "gen_ai.usage.completion_tokens" to outputTokens,
             "gen_ai.input.messages" to inputMessages,
             "system_instructions" to systemInstructions,
             "gen_ai.output.messages" to outputMessages,
             "gen_ai.tool.definitions" to toolDefinitions,
-            "gen_ai.response.finish_reasons" to listOf(SpanAttributes.Response.FinishReasonType.Stop.id),
+            "gen_ai.response.finish_reasons" to listOf(GenAIAttributes.Response.FinishReasonType.Stop.id),
 
             "gen_ai.prompt.0.role" to Message.Role.System.name.lowercase(),
             "gen_ai.prompt.0.content" to systemPrompt,
@@ -281,7 +284,7 @@ class WeaveTraceStructureTest :
 
             // Weave-specific: tool call appears as assistant message in prompt history
             "gen_ai.prompt.2.role" to Message.Role.Assistant.name.lowercase(),
-            "gen_ai.prompt.2.finish_reason" to SpanAttributes.Response.FinishReasonType.ToolCalls.id,
+            "gen_ai.prompt.2.finish_reason" to GenAIAttributes.Response.FinishReasonType.ToolCalls.id,
             "gen_ai.prompt.2.tool_calls.0.id" to toolCallId,
             "gen_ai.prompt.2.tool_calls.0.type" to "function",
             "gen_ai.prompt.2.tool_calls.0.function" to "{\"name\":\"${TestGetWeatherTool.name}\",\"arguments\":\"{\\\"location\\\":\\\"Paris\\\"}\"}",

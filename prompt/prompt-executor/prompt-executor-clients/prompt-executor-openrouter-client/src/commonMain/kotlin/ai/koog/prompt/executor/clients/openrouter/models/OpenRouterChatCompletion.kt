@@ -6,8 +6,8 @@ import ai.koog.prompt.executor.clients.openai.base.models.OpenAIBaseLLMStreamRes
 import ai.koog.prompt.executor.clients.openai.base.models.OpenAIMessage
 import ai.koog.prompt.executor.clients.openai.base.models.OpenAIResponseFormat
 import ai.koog.prompt.executor.clients.openai.base.models.OpenAIStaticContent
+import ai.koog.prompt.executor.clients.openai.base.models.OpenAIStreamToolCall
 import ai.koog.prompt.executor.clients.openai.base.models.OpenAITool
-import ai.koog.prompt.executor.clients.openai.base.models.OpenAIToolCall
 import ai.koog.prompt.executor.clients.openai.base.models.OpenAIToolChoice
 import ai.koog.prompt.executor.clients.openai.base.models.OpenAIUsage
 import ai.koog.prompt.executor.clients.serialization.AdditionalPropertiesFlatteningSerializer
@@ -127,12 +127,17 @@ public class OpenRouterStreamChoice(
  * @property content The contents of the chunk message.
  * @property role The role of the author of this message.
  * @property toolCalls The tool calls requested by the model.
+ * @property reasoning The reasoning content for models that support it.
+ * @property reasoningDetails Additional reasoning details in structured format.
  */
 @Serializable
 public class OpenRouterStreamDelta(
     public val content: String? = null,
     public val role: String? = null,
-    public val toolCalls: List<OpenAIToolCall>? = null
+    public val toolCalls: List<OpenAIStreamToolCall>? = null,
+    public val reasoning: String? = null,
+    @SerialName("reasoning_details")
+    public val reasoningDetails: List<JsonElement>? = null
 )
 
 /**
@@ -193,4 +198,8 @@ public class OpenRouterError(
 )
 
 internal object OpenRouterChatCompletionRequestSerializer :
-    AdditionalPropertiesFlatteningSerializer<OpenRouterChatCompletionRequest>(OpenRouterChatCompletionRequest.serializer())
+    AdditionalPropertiesFlatteningSerializer<OpenRouterChatCompletionRequest>(
+        OpenRouterChatCompletionRequest.serializer(),
+        // OpenRouter uses snake case
+        additionalPropertiesField = "additional_properties"
+    )

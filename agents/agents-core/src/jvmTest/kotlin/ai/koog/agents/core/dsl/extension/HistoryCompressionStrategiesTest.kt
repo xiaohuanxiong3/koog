@@ -2,19 +2,19 @@ package ai.koog.agents.core.dsl.extension
 
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
-import ai.koog.agents.core.dsl.builder.forwardTo
+import ai.koog.agents.core.dsl.builder.node
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.testing.tools.DummyTool
 import ai.koog.agents.testing.tools.getMockExecutor
 import ai.koog.prompt.dsl.prompt
-import ai.koog.prompt.llm.OllamaModels
+import ai.koog.prompt.executor.ollama.client.OllamaModels
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
+import ai.koog.serialization.kotlinx.KotlinxSerializer
+import ai.koog.utils.time.KoogClock
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
@@ -22,9 +22,12 @@ import org.junit.jupiter.params.provider.MethodSource
 import java.util.stream.Stream
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 
 class HistoryCompressionStrategiesTest {
-    private fun createMockExecutor() = getMockExecutor {
+    private val serializer = KotlinxSerializer()
+
+    private fun createMockExecutor() = getMockExecutor(serializer) {
         mockLLMAnswer("TLDR").onRequestContains("Create a comprehensive summary")
     }
 
@@ -36,7 +39,7 @@ class HistoryCompressionStrategiesTest {
         )
     }
 
-    private fun createToolRegistry() = ToolRegistry.Companion {
+    private fun createToolRegistry() = ToolRegistry {
         tool(DummyTool())
     }
 
@@ -63,9 +66,7 @@ class HistoryCompressionStrategiesTest {
     companion object {
         private val dummyArgsContent = Json.encodeToString(DummyTool.Args("dummy"))
 
-        private fun testClock(delay: Duration): Clock = object : Clock {
-            override fun now(): Instant = Instant.parse("2023-01-01T00:00:00Z").plus(delay)
-        }
+        private fun testClock(delay: Duration): KoogClock = KoogClock { Instant.parse("2023-01-01T00:00:00Z").plus(delay) }
 
         val simpleHistory = listOf(
             Message.System("System message", metaInfo = RequestMetaInfo.create(testClock(0.minutes))),
@@ -370,7 +371,7 @@ class HistoryCompressionStrategiesTest {
         originalMessages: List<Message>,
         compressedMessages: List<Message>
     ) {
-        val agent = AIAgent.Companion(
+        val agent = AIAgent(
             promptExecutor = createMockExecutor(),
             strategy = createHistoryCompressionStrategy(
                 strategy,

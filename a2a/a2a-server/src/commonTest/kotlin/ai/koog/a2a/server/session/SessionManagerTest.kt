@@ -11,7 +11,7 @@ import ai.koog.a2a.model.TextPart
 import ai.koog.a2a.server.notifications.InMemoryPushNotificationConfigStorage
 import ai.koog.a2a.server.notifications.PushNotificationSender
 import ai.koog.a2a.server.tasks.InMemoryTaskStorage
-import ai.koog.a2a.utils.KeyedMutex
+import ai.koog.agents.lock.KeyedMutex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -19,12 +19,12 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
-import kotlinx.datetime.Instant
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 class SessionManagerTest {
     private companion object Companion {

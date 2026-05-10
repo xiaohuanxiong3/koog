@@ -15,25 +15,25 @@ import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.openai.OpenAIModels
 import ai.koog.prompt.executor.model.PromptExecutor
-import ai.koog.prompt.llm.OllamaModels
+import ai.koog.prompt.executor.ollama.client.OllamaModels
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
+import ai.koog.prompt.structure.json.generator.BasicJsonSchemaGenerator
+import ai.koog.prompt.structure.json.generator.StandardJsonSchemaGenerator
+import ai.koog.serialization.typeToken
+import ai.koog.utils.time.KoogClock
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
 import kotlinx.serialization.json.Json
-import kotlin.reflect.typeOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.time.Instant
 
 class LLMAsJudgeNodeTest {
-    private val testClock: Clock = object : Clock {
-        override fun now(): Instant = Instant.parse("2023-01-01T00:00:00Z")
-    }
+    private val testClock: KoogClock = KoogClock { Instant.parse("2023-01-01T00:00:00Z") }
 
     companion object {
         const val CRITIC_TASK = "Find all numbers produced by LLM and check that they are not divided by 3"
@@ -82,7 +82,7 @@ class LLMAsJudgeNodeTest {
         val context = AIAgentGraphContext(
             environment = mockEnv,
             agentId = "test-agent",
-            agentInputType = typeOf<String>(),
+            agentInputType = typeToken<String>(),
             agentInput = "Hello",
             config = mockk(),
             llm = mockLLM,
@@ -102,7 +102,7 @@ class LLMAsJudgeNodeTest {
 
         val anotherModel = OllamaModels.Meta.LLAMA_4_SCOUT
 
-        val llmJudgeNode by subgraphContext.llmAsAJudge<Int>(
+        val llmJudgeNode by llmAsAJudge<Int>(
             llmModel = anotherModel,
             task = CRITIC_TASK
         )
@@ -116,6 +116,9 @@ class LLMAsJudgeNodeTest {
                 metaInfo = ResponseMetaInfo.create(testClock),
             )
         )
+
+        coEvery { mockPromptExecutor.getStandardJsonSchemaGenerator(any()) } returns StandardJsonSchemaGenerator()
+        coEvery { mockPromptExecutor.getBasicJsonSchemaGenerator(any()) } returns BasicJsonSchemaGenerator()
 
         llmJudgeNode.execute(context, input = -200)
 

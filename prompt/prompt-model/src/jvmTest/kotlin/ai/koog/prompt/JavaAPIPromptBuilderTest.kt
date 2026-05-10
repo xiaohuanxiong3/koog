@@ -4,11 +4,11 @@ import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.dsl.PromptBuilder
 import ai.koog.prompt.message.ContentPart
 import ai.koog.prompt.message.Message
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import ai.koog.utils.time.KoogClock
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /**
  * Tests for @JavaAPI methods in PromptBuilder class.
@@ -18,9 +18,7 @@ class JavaAPIPromptBuilderTest {
     companion object {
         val ts: Instant = Instant.parse("2023-01-01T00:00:00Z")
 
-        val testClock: Clock = object : Clock {
-            override fun now(): Instant = ts
-        }
+        val testClock: KoogClock = KoogClock { ts }
 
         const val promptId = "test-id"
         const val systemMessage = "You are a helpful assistant"
@@ -74,32 +72,6 @@ class JavaAPIPromptBuilderTest {
         assertEquals(1, prompt.messages.size)
         assertTrue(prompt.messages[0] is Message.User)
         assertEquals(userMessage, prompt.messages[0].content)
-    }
-
-    @Test
-    fun testUserWithContentAndAttachmentsMethod() {
-        @Suppress("DEPRECATION")
-        val prompt = Prompt.builder(promptId, testClock)
-            .user(userMessage, emptyList())
-            .build()
-
-        assertEquals(1, prompt.messages.size)
-        assertTrue(prompt.messages[0] is Message.User)
-        assertEquals(userMessage, prompt.messages[0].content)
-    }
-
-    @Test
-    fun testUserWithContentAndBlockMethod() {
-        @Suppress("DEPRECATION")
-        val prompt = Prompt.builder(promptId, testClock)
-            .user("Base message") {
-                // Lambda for building parts
-            }
-            .build()
-
-        assertEquals(1, prompt.messages.size)
-        assertTrue(prompt.messages[0] is Message.User)
-        assertTrue(prompt.messages[0].content.contains("Base message"))
     }
 
     @Test

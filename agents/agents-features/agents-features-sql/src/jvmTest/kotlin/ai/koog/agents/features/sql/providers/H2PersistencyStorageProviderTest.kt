@@ -1,17 +1,16 @@
 package ai.koog.agents.features.sql.providers
-
 import ai.koog.agents.snapshot.feature.AgentCheckpointData
 import ai.koog.agents.snapshot.feature.isTombstone
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
+import ai.koog.serialization.JSONPrimitive
 import ai.koog.test.utils.DockerAvailableCondition
+import ai.koog.utils.time.KoogClock
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.datetime.Clock
-import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestInstance.Lifecycle
@@ -98,13 +97,13 @@ class H2PersistenceStorageProviderTest {
     private fun createTestCheckpoint(id: String, version: Long): AgentCheckpointData {
         return AgentCheckpointData(
             checkpointId = id,
-            createdAt = Clock.System.now(),
+            createdAt = KoogClock.System.now(),
             nodePath = "test-node",
-            lastOutput = JsonPrimitive("Test input"),
+            lastOutput = JSONPrimitive("Test input"),
             messageHistory = listOf(
-                Message.System("You are a test assistant", RequestMetaInfo.create(Clock.System)),
-                Message.User("Hello", RequestMetaInfo.create(Clock.System)),
-                Message.Assistant("Hi there!", ResponseMetaInfo.create(Clock.System))
+                Message.System("You are a test assistant", RequestMetaInfo.create(KoogClock.System)),
+                Message.User("Hello", RequestMetaInfo.create(KoogClock.System)),
+                Message.Assistant("Hi there!", ResponseMetaInfo.create(KoogClock.System))
             ),
             version = version
         )

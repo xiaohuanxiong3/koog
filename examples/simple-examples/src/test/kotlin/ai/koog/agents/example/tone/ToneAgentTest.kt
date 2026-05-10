@@ -54,7 +54,7 @@ class ToneAgentTest {
 
             onAgentExecutionFailed { eventContext ->
                 println(
-                    "[DEBUG_LOG] An error occurred: ${eventContext.throwable.message}\n${eventContext.throwable.stackTraceToString()}"
+                    "[DEBUG_LOG] An error occurred: ${eventContext.error.message}\n${eventContext.error.stackTraceToString()}"
                 )
             }
 
@@ -72,7 +72,7 @@ class ToneAgentTest {
         val negativeResponse = "The text has a negative tone."
         val neutralResponse = "The text has a neutral tone."
 
-        val mockLLMApi = getMockExecutor(toolRegistry) {
+        val mockLLMApi = getMockExecutor {
             // Set up LLM responses for different input texts
             mockLLMToolCall(NeutralToneTool, ToneTool.Args(defaultText)) onRequestEquals defaultText
             mockLLMToolCall(PositiveToneTool, ToneTool.Args(positiveText)) onRequestEquals positiveText

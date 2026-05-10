@@ -12,23 +12,21 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.params.LLMParams
 import ai.koog.prompt.streaming.StreamFrame
+import ai.koog.utils.time.KoogClock
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
 import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 class BedrockAnthropicClaudeSerializationTest {
 
-    private val mockClock = object : Clock {
-        override fun now(): Instant = Instant.DISTANT_FUTURE
-    }
+    private val mockClock = KoogClock { Instant.DISTANT_FUTURE }
 
     private val systemMessage = "You are a helpful assistant."
     private val userMessage = "Tell me about Paris."
@@ -327,8 +325,8 @@ class BedrockAnthropicClaudeSerializationTest {
         val content =
             BedrockAnthropicClaudeSerialization.transformAnthropicStreamChunks(chunkJsonStringFlow, mockClock).toList()
         val expected = listOf(
-            StreamFrame.Append("hello"),
-            StreamFrame.Append("world"),
+            StreamFrame.TextDelta("hello"),
+            StreamFrame.TextDelta("world"),
         )
         assertEquals(expected, content)
     }
@@ -444,10 +442,29 @@ class BedrockAnthropicClaudeSerializationTest {
         val content =
             BedrockAnthropicClaudeSerialization.transformAnthropicStreamChunks(chunkJsonStringFlow, mockClock).toList()
         val expected = listOf(
-            StreamFrame.ToolCall(
+            StreamFrame.ToolCallDelta(
                 id = toolId,
                 name = toolName,
-                content = "{\"location\":\"Paris\"}"
+                content = null,
+                index = 0
+            ),
+            StreamFrame.ToolCallDelta(
+                id = null,
+                name = null,
+                content = "{\"location\":",
+                index = 0
+            ),
+            StreamFrame.ToolCallDelta(
+                id = null,
+                name = null,
+                content = "\"Paris\"}",
+                index = 0
+            ),
+            StreamFrame.ToolCallComplete(
+                id = toolId,
+                name = toolName,
+                content = "{\"location\":\"Paris\"}",
+                index = 0
             )
         )
         assertEquals(expected, content)

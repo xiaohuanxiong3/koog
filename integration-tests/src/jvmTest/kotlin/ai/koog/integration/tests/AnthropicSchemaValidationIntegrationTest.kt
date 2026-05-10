@@ -78,7 +78,7 @@ class AnthropicSchemaValidationIntegrationTest {
         runBlocking {
             AIAgent(
                 promptExecutor = simpleAnthropicExecutor(anthropicApiKey!!),
-                llmModel = AnthropicModels.Sonnet_3_7,
+                llmModel = AnthropicModels.Opus_4_6,
                 systemPrompt = "You are a helpful assistant that can process user profiles. Please use the complex_nested_tool to process the user profile I provide.",
                 toolRegistry = ToolRegistry {
                     tool(ComplexNestedTool)
@@ -87,9 +87,9 @@ class AnthropicSchemaValidationIntegrationTest {
                     install(EventHandler) {
                         onAgentExecutionFailed { eventContext ->
                             println(
-                                "ERROR: ${eventContext.throwable.javaClass.simpleName}(${eventContext.throwable.message})"
+                                "ERROR: ${eventContext.error.javaClass.simpleName}(${eventContext.error.message})"
                             )
-                            println(eventContext.throwable.stackTraceToString())
+                            println(eventContext.error.stackTraceToString())
                         }
                         onToolCallStarting { eventContext ->
                             println("Calling tool: ${eventContext.toolName}")

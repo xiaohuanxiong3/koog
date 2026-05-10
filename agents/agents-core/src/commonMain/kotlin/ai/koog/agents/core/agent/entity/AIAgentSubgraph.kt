@@ -1,3 +1,5 @@
+@file:Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
+
 package ai.koog.agents.core.agent.entity
 
 import ai.koog.agents.core.agent.context.AIAgentContext
@@ -10,28 +12,25 @@ import ai.koog.agents.core.agent.exception.AIAgentMaxNumberOfIterationsReachedEx
 import ai.koog.agents.core.agent.exception.AIAgentStuckInTheNodeException
 import ai.koog.agents.core.agent.execution.AgentExecutionInfo
 import ai.koog.agents.core.annotation.InternalAgentsApi
-import ai.koog.agents.core.dsl.extension.replaceHistoryWithTLDR
 import ai.koog.agents.core.prompt.Prompts.selectRelevantTools
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.annotations.LLMDescription
+import ai.koog.prompt.executor.model.StructureFixingParser
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.params.LLMParams
 import ai.koog.prompt.processor.ResponseProcessor
-import ai.koog.prompt.structure.StructureFixingParser
 import ai.koog.prompt.structure.StructuredRequest
 import ai.koog.prompt.structure.StructuredRequestConfig
 import ai.koog.prompt.structure.json.JsonStructure
 import ai.koog.prompt.structure.json.generator.StandardJsonSchemaGenerator
+import ai.koog.serialization.TypeToken
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
-import kotlin.reflect.KType
 import kotlin.uuid.ExperimentalUuidApi
 
 /**
- * [AIAgentSubgraph] represents a structured subgraph within an AI agent workflow. It serves as a logical
- * segment containing a defined starting and ending point. The subgraph is responsible for executing tasks
- * in a step-by-step manner, managing iterations, and handling tool selection strategies.
+ * Base class for [AIAgentSubgraph].
  *
  * @param TInput The type of input data accepted by the subgraph.
  * @param TOutput The type of output data returned by the subgraph.
@@ -43,7 +42,7 @@ import kotlin.uuid.ExperimentalUuidApi
  * @param llmParams Optional [LLMParams] override for the prompt for the subgraph execution.
  * @param responseProcessor Optional [ResponseProcessor] override for the subgraph execution.
  */
-public open class AIAgentSubgraph<TInput, TOutput>(
+public open class AIAgentSubgraphBase<TInput, TOutput>(
     override val name: String,
     public val start: StartNode<TInput>,
     public val finish: FinishNode<TOutput>,
@@ -52,11 +51,11 @@ public open class AIAgentSubgraph<TInput, TOutput>(
     private val llmParams: LLMParams? = null,
     private val responseProcessor: ResponseProcessor? = null,
 ) : AIAgentNodeBase<TInput, TOutput>(), ExecutionPointNode {
-    override val inputType: KType = start.inputType
-    override val outputType: KType = finish.outputType
+    override val inputType: TypeToken = start.inputType
+    override val outputType: TypeToken = finish.outputType
 
     /**
-     * Companion object for the AIAgentSubgraph class.
+     * Companion object for the AIAgentSubgraphBase class.
      *
      * This companion object provides predefined constants used to denote
      * special nodes (start and finish) within the subgraph of an AI agent strategy.
@@ -138,8 +137,8 @@ public open class AIAgentSubgraph<TInput, TOutput>(
                             examples = listOf(SelectedTools(listOf()), SelectedTools(tools.map { it.name }.take(3))),
                         ),
                     ),
-                    fixingParser = toolSelectionStrategy.fixingParser,
-                )
+                ),
+                fixingParser = toolSelectionStrategy.fixingParser,
             ).getOrThrow()
 
             prompt = initialPrompt
@@ -149,12 +148,22 @@ public open class AIAgentSubgraph<TInput, TOutput>(
     }
 
     /**
-     * Executes the desired operation based on the input and the provided context.
-     * This function determines the execution strategy based on the tool selection strategy configured in the class.
+     * Executes the subgraph for the given [input] within [context].
      *
-     * @param context The context of the AI agent which includes all necessary resources and metadata for execution.
-     * @param input The input object representing the data to be processed by the AI agent.
-     * @return The output of the AI agent execution, generated after processing the input.
+     * During execution this method:
+     * - Resolves the effective toolset according to the configured [ToolSelectionStrategy] and replaces
+     *   [context]'s LLM context with an updated one, overriding `tools`, and optionally `model`,
+     *   `prompt.params` and `responseProcessor` for the duration of the subgraph execution.
+     * - Emits `onSubgraphExecutionStarting`, `onSubgraphExecutionCompleted` and `onSubgraphExecutionFailed`
+     *   pipeline events, unless this subgraph is the strategy-level subgraph (which is reported separately).
+     * - Runs nodes starting from [start] (or from an enforced [ExecutionPoint], if present) and follows
+     *   edges until [finish] is reached or execution is interrupted.
+     * - Restores the original LLM context afterwards, preserving the updated message history.
+     *
+     * @param context The graph execution context which includes all necessary resources and metadata for execution.
+     * @param input The input data to be processed by the subgraph.
+     * @return The output produced by [finish], or `null` if execution was interrupted
+     * (for example, due to a requested jump to another node or a checkpoint rollback).
      */
     @OptIn(InternalAgentsApi::class, DetachedPromptExecutorAPI::class, ExperimentalUuidApi::class)
     override suspend fun execute(context: AIAgentGraphContextBase, input: TInput): TOutput? =
@@ -176,7 +185,14 @@ public open class AIAgentSubgraph<TInput, TOutput>(
             )
 
             runIfNotStrategy(context) {
-                pipeline.onSubgraphExecutionStarting(eventId, executionInfo, this@AIAgentSubgraph, context, input, inputType)
+                pipeline.onSubgraphExecutionStarting(
+                    eventId,
+                    executionInfo,
+                    this@AIAgentSubgraphBase,
+                    context,
+                    input,
+                    inputType
+                )
             }
 
             // Execute the subgraph with an inner context and get the result and updated prompt.
@@ -187,7 +203,15 @@ public open class AIAgentSubgraph<TInput, TOutput>(
             } catch (e: Exception) {
                 logger.error(e) { "Exception during executing subgraph '$name': ${e.message}" }
                 runIfNotStrategy(context) {
-                    pipeline.onSubgraphExecutionFailed(eventId, executionInfo, this@AIAgentSubgraph, context, input, inputType, e)
+                    pipeline.onSubgraphExecutionFailed(
+                        eventId,
+                        executionInfo,
+                        this@AIAgentSubgraphBase,
+                        context,
+                        input,
+                        inputType,
+                        e
+                    )
                 }
                 throw e
             }
@@ -208,7 +232,16 @@ public open class AIAgentSubgraph<TInput, TOutput>(
             }
 
             runIfNotStrategy(context) {
-                pipeline.onSubgraphExecutionCompleted(eventId, executionInfo, this@AIAgentSubgraph, context, input, inputType, result, outputType)
+                pipeline.onSubgraphExecutionCompleted(
+                    eventId,
+                    executionInfo,
+                    this@AIAgentSubgraphBase,
+                    context,
+                    input,
+                    inputType,
+                    result,
+                    outputType
+                )
             }
 
             result
@@ -283,20 +316,20 @@ public open class AIAgentSubgraph<TInput, TOutput>(
                     "Invalid finish node output type: ${currentInput?.let { it::class.simpleName }}"
                 )
             }
-            throw IllegalStateException("${FinishNode::class.simpleName} should always return String")
+            throw IllegalStateException("${FinishNode::class.simpleName} should always return a value assignable to the declared output type")
         }
         return result
     }
 
     /**
-     * Executes the specified action for a case when executing a subgraph logic and not
-     * specifically for strategy.
+     * Executes the specified action only when running subgraph logic, and not when the current
+     * subgraph is the strategy-level subgraph.
      *
-     * Strategy is a special case of subgraph execution. Strategy execution wraps the subgraph [execute] method
+     * A strategy is a special case of subgraph execution. Strategy execution wraps the subgraph [execute] method
      * with its specific implementation. This method ensures that the action we run is only
-     * executed the current subgraph is not a strategy.
+     * executed if the current subgraph is not a strategy.
      *
-     * The method is used for reporting subgraph-only agent events in the [ai.koog.agents.core.feature.pipeline.AIAgentPipeline]
+     * The method is used for reporting subgraph-only agent events in the [ai.koog.agents.core.feature.pipeline.AIAgentPipeline].
      */
     @OptIn(InternalAgentsApi::class)
     private inline fun runIfNotStrategy(
@@ -319,9 +352,10 @@ public open class AIAgentSubgraph<TInput, TOutput>(
      * Use this special wrapper to execute a block of code with a modified execution context for cases when
      * performing a direct subgraph execution.
      *
-     * Strategy is a special case of subgraph execution. Strategy execution wraps the subgraph [execute] method
-     * with its specific implementation. This method ensures that the action we run is only
-     * executed the current subgraph is not a strategy.
+     * A strategy is a special case of subgraph execution. Strategy execution wraps the subgraph [execute] method
+     * with its specific implementation. This wrapper ensures that for non-strategy subgraphs the block is
+     * executed with an execution scope keyed by the subgraph [id], while for strategy subgraphs the existing
+     * execution info from the context is reused.
      */
     @OptIn(InternalAgentsApi::class)
     private inline fun <T> AIAgentContext.with(
@@ -341,6 +375,33 @@ public open class AIAgentSubgraph<TInput, TOutput>(
     private fun formatLog(context: AIAgentContext, message: String): String =
         "$message [$name, ${context.strategyName}, ${context.runId}]"
 }
+
+/**
+ * Represents a subgraph within an AI agent execution strategy capable of processing input and producing output.
+ *
+ * A subgraph is a modular component of a larger execution graph, defined by a [StartNode] as the entry point
+ * and a [FinishNode] as the exit point. The subgraph may implement tool selection strategies, incorporate language
+ * model support, and apply custom response processing to tailor its behavior within the broader agent workflow.
+ *
+ * @param TInput The type of input data accepted by the subgraph.
+ * @param TOutput The type of output data returned by the subgraph.
+ * @param name The name of the subgraph.
+ * @param start The starting node of the subgraph, which initiates the processing.
+ * @param finish The finishing node of the subgraph, which concludes the processing.
+ * @param toolSelectionStrategy Strategy determining which tools should be available during this subgraph's execution.
+ * @param llmModel Optional [LLModel] override for the subgraph execution.
+ * @param llmParams Optional [LLMParams] override for the prompt for the subgraph execution.
+ * @param responseProcessor Optional [ResponseProcessor] override for the subgraph execution.
+ */
+public expect class AIAgentSubgraph<TInput, TOutput> constructor(
+    name: String,
+    start: StartNode<TInput>,
+    finish: FinishNode<TOutput>,
+    toolSelectionStrategy: ToolSelectionStrategy,
+    llmModel: LLModel? = null,
+    llmParams: LLMParams? = null,
+    responseProcessor: ResponseProcessor? = null,
+) : AIAgentSubgraphBase<TInput, TOutput>
 
 /**
  * Represents a strategy to select a subset of tools to be used in a subgraph during its execution.
@@ -366,7 +427,7 @@ public sealed interface ToolSelectionStrategy {
      * This object, when used, implies that the subgraph should operate without any tools available. It can be
      * used in scenarios where tool functionality is not required or should be explicitly restricted.
      *
-     * Part of the sealed interface `SubgraphToolSubset` which defines various tool subset configurations
+     * Part of the sealed interface [ToolSelectionStrategy] which defines various tool subset configurations
      * for subgraph behaviors.
      */
     public data object NONE : ToolSelectionStrategy
@@ -374,12 +435,13 @@ public sealed interface ToolSelectionStrategy {
     /**
      * Represents a subset of tools tailored to the specific requirements of a subtask.
      *
-     * The purpose of this class is to dynamically select and include only the tools that are directly relevant to the
-     * provided subtask description (based on LLM request).
-     * This ensures that unnecessary tools are excluded, optimizing the toolset for the specific use case.
+     * The purpose of this class is to dynamically select and include only the tools that are directly relevant
+     * to the provided subtask description by asking the LLM, using a structured request, which tools from the
+     * currently available toolset are relevant to [subtaskDescription]. This ensures that unnecessary tools
+     * are excluded, optimizing the toolset for the specific use case.
      *
      * @property subtaskDescription A description of the subtask for which the relevant tools should be selected.
-     * @property fixingParser Optional [StructureFixingParser] to attempt fixes when malformed structured response with a tool list is received.
+     * @property fixingParser Optional [StructureFixingParser] to attempt fixes when a malformed structured response with a tool list is received.
      */
     public data class AutoSelectForTask(
         val subtaskDescription: String,
@@ -390,7 +452,7 @@ public sealed interface ToolSelectionStrategy {
      * Represents a subset of tools to be used within a subgraph or task.
      *
      * The Tools class allows for specifying a custom selection of tools that are relevant
-     * to a specific operation or task. It forms a part of the `SubgraphToolSubset` interface
+     * to a specific operation or task. It forms a part of the [ToolSelectionStrategy] interface
      * hierarchy for flexible and dynamic tool configurations.
      *
      * @property tools A collection of `ToolDescriptor` objects defining the tools to be used.

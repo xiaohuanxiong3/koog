@@ -5,26 +5,24 @@ import ai.koog.prompt.dsl.ModerationResult
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.PromptExecutor
+import ai.koog.prompt.executor.ollama.client.OllamaModels
 import ai.koog.prompt.llm.LLModel
-import ai.koog.prompt.llm.OllamaModels
 import ai.koog.prompt.message.LLMChoice
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.prompt.streaming.streamFrameFlowOf
+import ai.koog.utils.time.KoogClock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
 import kotlin.js.JsName
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.time.Instant
 
 class ChoiceSelectionStrategyTest {
 
-    private val testClock: Clock = object : Clock {
-        override fun now(): Instant = Instant.parse("2023-01-01T00:00:00Z")
-    }
+    private val testClock: KoogClock = KoogClock { Instant.parse("2023-01-01T00:00:00Z") }
 
     @Test
     @JsName("DummyChoiceStrategy_should_return_first_choice")
@@ -51,7 +49,7 @@ class ChoiceSelectionStrategyTest {
     @JsName("PromptExecutorChoice_should_delegate_to_strategy")
     fun `PromptExecutorWithChoiceSelection should delegate to strategy`() = runTest {
         // Arrange
-        val mockExecutor = object : PromptExecutor {
+        val mockExecutor = object : PromptExecutor() {
             override suspend fun execute(
                 prompt: Prompt,
                 model: LLModel,

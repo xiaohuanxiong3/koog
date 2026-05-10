@@ -5,11 +5,13 @@ import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
 import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.clients.openai.OpenAIModels
+import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.executor.llms.all.simpleAnthropicExecutor
 import ai.koog.prompt.executor.llms.all.simpleGoogleAIExecutor
 import ai.koog.prompt.executor.llms.all.simpleOpenAIExecutor
+import ai.koog.prompt.executor.ollama.client.OllamaClient
+import ai.koog.prompt.executor.ollama.client.OllamaModels
 import ai.koog.prompt.markdown.markdown
-import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 
 suspend fun main() {
@@ -40,11 +42,16 @@ suspend fun main() {
         }
     }
 
+    val ollamaModel = OllamaModels.Alibaba.QWEN_3_5_9B
+    val llmClient = OllamaClient().also { it.getModelOrNull(ollamaModel.id, pullIfMissing = true) }
+    val ollamaExecutor = MultiLLMPromptExecutor(llmClient)
     val openaiExecutor = simpleOpenAIExecutor(ApiKeyService.openAIApiKey)
     val anthropicExecutor = simpleAnthropicExecutor(ApiKeyService.anthropicApiKey)
     val googleExecutor = simpleGoogleAIExecutor(ApiKeyService.googleApiKey)
 
     try {
+        println("OllamaAI response:")
+        ollamaExecutor.execute(prompt, ollamaModel).single().content.also(::println)
         println("OpenAI response:")
         openaiExecutor.execute(prompt, OpenAIModels.Chat.GPT4_1).single().content.also(::println)
         println("Anthropic response:")
@@ -52,6 +59,7 @@ suspend fun main() {
         println("Google response:")
         googleExecutor.execute(prompt, GoogleModels.Gemini2_0Flash).single().content.also(::println)
     } finally {
+        ollamaExecutor.close()
         openaiExecutor.close()
         anthropicExecutor.close()
         googleExecutor.close()

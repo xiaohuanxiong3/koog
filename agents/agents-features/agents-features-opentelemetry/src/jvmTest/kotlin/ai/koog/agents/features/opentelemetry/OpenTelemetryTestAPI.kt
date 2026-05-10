@@ -7,7 +7,6 @@ import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.agent.entity.AIAgentGraphStrategy
 import ai.koog.agents.core.agent.entity.AIAgentStrategy
 import ai.koog.agents.core.agent.functionalStrategy
-import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.nodeExecuteTool
 import ai.koog.agents.core.dsl.extension.nodeLLMRequest
@@ -25,7 +24,7 @@ import ai.koog.agents.features.opentelemetry.OpenTelemetryTestAPI.Parameter.USER
 import ai.koog.agents.features.opentelemetry.OpenTelemetryTestAPI.Parameter.defaultModel
 import ai.koog.agents.features.opentelemetry.OpenTelemetryTestAPI.Strategy.getSingleLLMCallStrategy
 import ai.koog.agents.features.opentelemetry.OpenTelemetryTestAPI.Strategy.getSingleToolCallStrategy
-import ai.koog.agents.features.opentelemetry.attribute.SpanAttributes
+import ai.koog.agents.features.opentelemetry.attribute.GenAIAttributes
 import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.agents.features.opentelemetry.feature.OpenTelemetryConfig
 import ai.koog.agents.features.opentelemetry.mock.MockSpanExporter
@@ -37,24 +36,25 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.params.LLMParams
+import ai.koog.serialization.kotlinx.KotlinxSerializer
 import ai.koog.utils.io.use
+import ai.koog.utils.time.KoogClock
+import io.opentelemetry.kotlin.tracing.export.simpleSpanProcessor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 internal object OpenTelemetryTestAPI {
+    private val serializer = KotlinxSerializer()
 
-    internal val testClock: Clock = object : Clock {
-        override fun now(): Instant = Instant.parse("2023-01-01T00:00:00Z")
-    }
+    internal val testClock: KoogClock = KoogClock { Instant.parse("2023-01-01T00:00:00Z") }
 
     private val spansCollectionTimeout = 5.seconds
 
@@ -139,7 +139,7 @@ internal object OpenTelemetryTestAPI {
         }
     }
 
-    internal val defaultMockExecutor = getMockExecutor(clock = testClock) {
+    internal val defaultMockExecutor = getMockExecutor(serializer, testClock) {
         mockLLMAnswer(MOCK_LLM_RESPONSE_PARIS) onRequestEquals USER_PROMPT_PARIS
     }
 
@@ -153,7 +153,7 @@ internal object OpenTelemetryTestAPI {
     ): OpenTelemetryTestData {
         val strategy = getSingleLLMCallStrategy(agentType)
 
-        val executor = getMockExecutor(clock = testClock) {
+        val executor = getMockExecutor(serializer, testClock) {
             mockLLMAnswer(mockLLMResponse) onRequestEquals userPrompt
         }
 
@@ -178,7 +178,7 @@ internal object OpenTelemetryTestAPI {
             tool(mockToolCallResponse.tool)
         }
 
-        val executor = getMockExecutor(clock = testClock) {
+        val executor = getMockExecutor(serializer, testClock) {
             // Mock tool call
             mockLLMToolCall(
                 tool = mockToolCallResponse.tool,
@@ -188,7 +188,7 @@ internal object OpenTelemetryTestAPI {
 
             // Mock response from the "send tool result" node
             mockLLMAnswer(mockLLMResponse) onRequestContains
-                mockToolCallResponse.tool.encodeResultToString(mockToolCallResponse.toolResult)
+                mockToolCallResponse.tool.encodeResultToString(mockToolCallResponse.toolResult, serializer)
         }
 
         return runAgentWithStrategy(
@@ -230,7 +230,7 @@ internal object OpenTelemetryTestAPI {
                 temperature = TEMPERATURE,
                 maxTokens = maxTokens,
             ) {
-                addSpanExporter(mockExporter)
+                addSpanProcessor { simpleSpanProcessor(mockExporter) }
                 setVerbose(verbose)
             }.use { agent ->
                 agent.run(userPrompt ?: USER_PROMPT_PARIS)
@@ -312,7 +312,7 @@ internal object OpenTelemetryTestAPI {
                 clock = testClock,
                 params = LLMParams(
                     temperature = temperature,
-                    maxTokens = maxTokens
+                    maxTokens = maxTokens,
                 )
             ) {
                 systemPrompt?.let { system(systemPrompt) }
@@ -322,7 +322,7 @@ internal object OpenTelemetryTestAPI {
             model = model ?: OpenAIModels.Chat.GPT4o,
             maxAgentIterations = 10,
         )
-        val promptExecutor = executor ?: getMockExecutor(clock = testClock) { }
+        val promptExecutor = executor ?: getMockExecutor(serializer, testClock) { }
         val toolRegistry = toolRegistry ?: ToolRegistry.EMPTY
 
         return when (strategy) {
@@ -336,7 +336,7 @@ internal object OpenTelemetryTestAPI {
             }
 
             is AIAgentFunctionalStrategy -> AIAgentService(
-                promptExecutor = executor ?: getMockExecutor(clock = testClock) { },
+                promptExecutor = executor ?: getMockExecutor(serializer, testClock) { },
                 strategy = strategy,
                 agentConfig = agentConfig,
                 toolRegistry = toolRegistry
@@ -376,11 +376,11 @@ internal object OpenTelemetryTestAPI {
     }
 
     fun getMessagesString(messages: List<Message>): String {
-        return SpanAttributes.Input.Messages(messages).value.value
+        return GenAIAttributes.Input.Messages(messages).value.value
     }
 
     fun getToolDefinitionsString(toolDescriptors: List<ai.koog.agents.core.tools.ToolDescriptor>): String {
-        return SpanAttributes.Tool.Definitions(toolDescriptors).value.value
+        return GenAIAttributes.Tool.Definitions(toolDescriptors).value.value
     }
 
     //endregion Attributes

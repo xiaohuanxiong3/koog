@@ -2,9 +2,9 @@ package ai.koog.agents.core.feature.model.events
 
 import ai.koog.agents.core.agent.execution.AgentExecutionInfo
 import ai.koog.agents.core.feature.model.AIAgentError
-import kotlinx.datetime.Clock
+import ai.koog.serialization.JSONElement
+import ai.koog.utils.time.KoogClock
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
 
 /**
  * Represents an event triggered when the execution of a specific subgraph starts.
@@ -26,8 +26,8 @@ public data class SubgraphExecutionStartingEvent(
     override val executionInfo: AgentExecutionInfo,
     val runId: String,
     val subgraphName: String,
-    val input: JsonElement?,
-    override val timestamp: Long = Clock.System.now().toEpochMilliseconds(),
+    val input: JSONElement?,
+    override val timestamp: Long = KoogClock.System.now().toEpochMilliseconds(),
 ) : DefinedFeatureEvent() {
 
     /**
@@ -40,8 +40,8 @@ public data class SubgraphExecutionStartingEvent(
     public constructor(
         runId: String,
         subgraphName: String,
-        input: JsonElement?,
-        timestamp: Long = Clock.System.now().toEpochMilliseconds()
+        input: JSONElement?,
+        timestamp: Long = KoogClock.System.now().toEpochMilliseconds()
     ) : this(
         eventId = SubgraphExecutionStartingEvent::class.simpleName.toString(),
         executionInfo = AgentExecutionInfo(
@@ -72,9 +72,9 @@ public data class SubgraphExecutionCompletedEvent(
     override val executionInfo: AgentExecutionInfo,
     val runId: String,
     val subgraphName: String,
-    val input: JsonElement?,
-    val output: JsonElement?,
-    override val timestamp: Long = Clock.System.now().toEpochMilliseconds(),
+    val input: JSONElement?,
+    val output: JSONElement?,
+    override val timestamp: Long = KoogClock.System.now().toEpochMilliseconds(),
 ) : DefinedFeatureEvent() {
 
     /**
@@ -87,9 +87,9 @@ public data class SubgraphExecutionCompletedEvent(
     public constructor(
         runId: String,
         subgraphName: String,
-        input: JsonElement?,
-        output: JsonElement?,
-        timestamp: Long = Clock.System.now().toEpochMilliseconds()
+        input: JSONElement?,
+        output: JSONElement?,
+        timestamp: Long = KoogClock.System.now().toEpochMilliseconds()
     ) : this(
         eventId = SubgraphExecutionCompletedEvent::class.simpleName.toString(),
         executionInfo = AgentExecutionInfo(
@@ -121,9 +121,9 @@ public data class SubgraphExecutionFailedEvent(
     override val executionInfo: AgentExecutionInfo,
     val runId: String,
     val subgraphName: String,
-    val input: JsonElement?,
+    val input: JSONElement?,
     val error: AIAgentError,
-    override val timestamp: Long = Clock.System.now().toEpochMilliseconds(),
+    override val timestamp: Long = KoogClock.System.now().toEpochMilliseconds(),
 ) : DefinedFeatureEvent() {
 
     /**
@@ -136,9 +136,9 @@ public data class SubgraphExecutionFailedEvent(
     public constructor(
         runId: String,
         subgraphName: String,
-        input: JsonElement?,
+        input: JSONElement?,
         error: AIAgentError,
-        timestamp: Long = Clock.System.now().toEpochMilliseconds()
+        timestamp: Long = KoogClock.System.now().toEpochMilliseconds()
     ) : this(
         eventId = SubgraphExecutionFailedEvent::class.simpleName.toString(),
         executionInfo = AgentExecutionInfo(

@@ -7,8 +7,8 @@ import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
+import ai.koog.utils.time.KoogClock
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.Clock
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -38,13 +38,9 @@ class InMemoryPromptCacheTest {
         private val testPrompts = (1..5).map { iter -> Prompt.build(testPrompt) { user("Hello, world! $iter") } }
         private val testResponses = (1..5).map { iter -> listOf(createAssistantMessage("Hello, user $iter")) }
 
-        private val testClock = object : Clock {
-            override fun now() = testResponse.first().metaInfo.timestamp
-        }
+        private val testClock = KoogClock { testResponse.first().metaInfo.timestamp }
 
-        private val differentTestClock = object : Clock {
-            override fun now() = testClock.now().plus(1.milliseconds)
-        }
+        private val differentTestClock = KoogClock { testClock.now().plus(1.milliseconds) }
     }
 
     @BeforeTest

@@ -1,15 +1,17 @@
 package ai.koog.agents.core.agent
 
 import ai.koog.agents.core.agent.config.AIAgentConfig
-import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
+import ai.koog.agents.core.tools.SimpleTool
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.testing.tools.getMockExecutor
 import ai.koog.prompt.dsl.prompt
-import ai.koog.prompt.llm.OllamaModels
+import ai.koog.prompt.executor.ollama.client.OllamaModels
+import ai.koog.serialization.kotlinx.KotlinxSerializer
+import ai.koog.serialization.typeToken
+import ai.koog.utils.time.KoogClock
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.Clock
-import kotlin.reflect.typeOf
+import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -17,6 +19,18 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class AIAgentServiceTest {
+    private val serializer = KotlinxSerializer()
+
+    @Serializable
+    private data class EchoArgs(val value: String)
+
+    private class EchoTool(name: String) : SimpleTool<EchoArgs>(
+        argsType = typeToken<EchoArgs>(),
+        name = name,
+        description = "Echo tool",
+    ) {
+        override suspend fun execute(args: EchoArgs): String = args.value
+    }
 
     private fun mockConfig(): AIAgentConfig = AIAgentConfig(
         prompt = prompt("test-prompt") { system("sys") },
@@ -37,7 +51,7 @@ class AIAgentServiceTest {
 
     @Test
     fun testCompanionInvoke_graphWithTypes_buildsServiceAndCreatesAgents() = runTest {
-        val executor = getMockExecutor { }
+        val executor = getMockExecutor(serializer) { }
         val service = AIAgentService(
             promptExecutor = executor,
             agentConfig = mockConfig(),
@@ -51,14 +65,14 @@ class AIAgentServiceTest {
         assertNotNull(service.toolRegistry)
 
         // create agent and run
-        val agent = service.createAgent(id = "id-1", clock = Clock.System)
+        val agent = service.createAgent(id = "id-1", clock = KoogClock.System)
         val out = agent.run("in", null)
         assertEquals("ok:in", out)
     }
 
     @Test
     fun testCompanionInvoke_graphWithModel_buildsServiceFromModel() = runTest {
-        val executor = getMockExecutor { }
+        val executor = getMockExecutor(serializer) { }
         val service = AIAgentService(
             promptExecutor = executor,
             llmModel = OllamaModels.Meta.LLAMA_3_2,
@@ -66,7 +80,6 @@ class AIAgentServiceTest {
             toolRegistry = ToolRegistry {},
             systemPrompt = "You are helpful",
             temperature = 0.5,
-            numberOfChoices = 2,
             maxIterations = 7
         )
         assertEquals(executor, service.promptExecutor)
@@ -76,7 +89,7 @@ class AIAgentServiceTest {
 
     @Test
     fun testFunctionalService_factoryAndRun() = runTest {
-        val executor = getMockExecutor { }
+        val executor = getMockExecutor(serializer) { }
         val cfg = mockConfig()
         val service = AIAgentService(
             promptExecutor = executor,
@@ -96,7 +109,7 @@ class AIAgentServiceTest {
 
     @Test
     fun testFromAgent_factories() = runTest {
-        val executor = getMockExecutor { }
+        val executor = getMockExecutor(serializer) { }
         val cfg = mockConfig()
         val strat = mockGraphStrategy()
         val graphAgent = GraphAIAgent(
@@ -104,8 +117,8 @@ class AIAgentServiceTest {
             strategy = strat,
             promptExecutor = executor,
             agentConfig = cfg,
-            inputType = typeOf<String>(),
-            outputType = typeOf<String>()
+            inputType = typeToken<String>(),
+            outputType = typeToken<String>()
         )
 
         val serviceFromGraph = AIAgentService.fromAgent<String, String>(graphAgent)
@@ -120,7 +133,7 @@ class AIAgentServiceTest {
         )
         val funcAgent = funcService.createAgent()
         val serviceFromFunctional = AIAgentService.fromAgent(
-            funcAgent as FunctionalAIAgent<Int, Int>
+            funcAgent
         )
         assertEquals(executor, (serviceFromFunctional as FunctionalAIAgentService<Int, Int>).promptExecutor)
         assertEquals(cfg, serviceFromFunctional.agentConfig)
@@ -128,7 +141,7 @@ class AIAgentServiceTest {
 
     @Test
     fun testCreateAgentAndRun_andCloseAll() = runTest {
-        val executor = getMockExecutor { }
+        val executor = getMockExecutor(serializer) { }
         val service = AIAgentService(
             promptExecutor = executor,
             agentConfig = mockConfig(),
@@ -141,5 +154,58 @@ class AIAgentServiceTest {
         // Create a couple agents then closeAll should not throw
         service.createAgent("a")
         service.createAgent("b")
+    }
+
+    @Test
+    fun testAgentByIdTracksCreatedAndRemovedAgents() = runTest {
+        val executor = getMockExecutor(serializer) { }
+        val service = AIAgentService(
+            promptExecutor = executor,
+            agentConfig = mockConfig(),
+            strategy = mockGraphStrategy(),
+            toolRegistry = ToolRegistry {}
+        )
+
+        val agent = service.createAgent(id = "tracked-agent")
+        assertEquals(agent, service.agentById("tracked-agent"))
+
+        assertTrue(service.removeAgentWithId("tracked-agent"))
+        assertEquals(null, service.agentById("tracked-agent"))
+    }
+
+    @Test
+    fun testCreateAgentMergesServiceAndAdditionalToolRegistries() = runTest {
+        val executor = getMockExecutor(serializer) { }
+        val service = AIAgentService(
+            promptExecutor = executor,
+            agentConfig = mockConfig(),
+            strategy = mockGraphStrategy(),
+            toolRegistry = ToolRegistry { tool(EchoTool("service_tool")) }
+        )
+
+        val agent = service.createAgent(
+            id = "with-tools",
+            additionalToolRegistry = ToolRegistry { tool(EchoTool("additional_tool")) }
+        )
+
+        assertNotNull(agent.toolRegistry.getToolOrNull("service_tool"))
+        assertNotNull(agent.toolRegistry.getToolOrNull("additional_tool"))
+    }
+
+    @Test
+    fun testCreateAgentWithSameIdReplacesManagedAgentEntry() = runTest {
+        val executor = getMockExecutor(serializer) { }
+        val service = AIAgentService(
+            promptExecutor = executor,
+            agentConfig = mockConfig(),
+            strategy = mockGraphStrategy(),
+            toolRegistry = ToolRegistry {}
+        )
+
+        val first = service.createAgent(id = "same-id")
+        val second = service.createAgent(id = "same-id")
+
+        assertEquals(second, service.agentById("same-id"))
+        assertTrue(first !== second)
     }
 }

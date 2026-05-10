@@ -1,11 +1,11 @@
 package ai.koog.agents.core.feature.handler.subgraph
 
 import ai.koog.agents.core.agent.context.AIAgentGraphContextBase
-import ai.koog.agents.core.agent.entity.AIAgentSubgraph
+import ai.koog.agents.core.agent.entity.AIAgentSubgraphBase
 import ai.koog.agents.core.agent.execution.AgentExecutionInfo
 import ai.koog.agents.core.feature.handler.AgentLifecycleEventContext
 import ai.koog.agents.core.feature.handler.AgentLifecycleEventType
-import kotlin.reflect.KType
+import ai.koog.serialization.TypeToken
 
 /**
  * Represents the context for handling subgraph-specific events for graph strategies within the framework.
@@ -24,10 +24,10 @@ public interface SubgraphExecutionEventContext : AgentLifecycleEventContext
 public data class SubgraphExecutionStartingContext(
     override val eventId: String,
     override val executionInfo: AgentExecutionInfo,
-    val subgraph: AIAgentSubgraph<*, *>,
+    val subgraph: AIAgentSubgraphBase<*, *>,
     val context: AIAgentGraphContextBase,
     val input: Any?,
-    val inputType: KType,
+    val inputType: TypeToken,
 ) : SubgraphExecutionEventContext {
     override val eventType: AgentLifecycleEventType = AgentLifecycleEventType.SubgraphExecutionStarting
 }
@@ -46,12 +46,12 @@ public data class SubgraphExecutionStartingContext(
 public data class SubgraphExecutionCompletedContext(
     override val eventId: String,
     override val executionInfo: AgentExecutionInfo,
-    val subgraph: AIAgentSubgraph<*, *>,
+    val subgraph: AIAgentSubgraphBase<*, *>,
     val context: AIAgentGraphContextBase,
     val input: Any?,
     val output: Any?,
-    val inputType: KType,
-    val outputType: KType,
+    val inputType: TypeToken,
+    val outputType: TypeToken,
 ) : SubgraphExecutionEventContext {
     override val eventType: AgentLifecycleEventType = AgentLifecycleEventType.SubgraphExecutionCompleted
 }
@@ -64,16 +64,16 @@ public data class SubgraphExecutionCompletedContext(
  * @property context The context in which the subgraph failed to execute.
  * @property input The input data for the subgraph execution.
  * @property inputType The type of the input data for the subgraph execution.
- * @property throwable The exception that caused the subgraph execution to fail.
+ * @property error The exception that caused the subgraph execution to fail.
  */
 public data class SubgraphExecutionFailedContext(
     override val eventId: String,
     override val executionInfo: AgentExecutionInfo,
-    val subgraph: AIAgentSubgraph<*, *>,
+    val subgraph: AIAgentSubgraphBase<*, *>,
     val context: AIAgentGraphContextBase,
     val input: Any?,
-    val inputType: KType,
-    val throwable: Throwable
+    val inputType: TypeToken,
+    val error: Throwable
 ) : SubgraphExecutionEventContext {
     override val eventType: AgentLifecycleEventType = AgentLifecycleEventType.SubgraphExecutionFailed
 }

@@ -1,0 +1,163 @@
+@file:Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING", "MissingKDocForPublicAPI")
+
+package ai.koog.agents.core.agent
+
+import ai.koog.agents.annotations.JavaAPI
+import ai.koog.agents.core.agent.config.AIAgentConfig
+import ai.koog.agents.core.annotation.InternalAgentsApi
+import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.core.utils.runBlockingOnStrategyDispatcher
+import ai.koog.prompt.executor.model.PromptExecutor
+import ai.koog.utils.time.KoogClock
+import java.util.concurrent.ExecutorService
+
+@OptIn(InternalAgentsApi::class)
+public actual abstract class AIAgentService<Input, Output, TAgent : AIAgent<Input, Output>> {
+    public actual abstract val promptExecutor: PromptExecutor
+    public actual abstract val agentConfig: AIAgentConfig
+    public actual abstract val toolRegistry: ToolRegistry
+    public actual abstract suspend fun createAgent(
+        id: String?,
+        additionalToolRegistry: ToolRegistry,
+        agentConfig: AIAgentConfig,
+        clock: KoogClock
+    ): TAgent
+
+    public actual abstract suspend fun createAgentAndRun(
+        agentInput: Input,
+        id: String?,
+        additionalToolRegistry: ToolRegistry,
+        agentConfig: AIAgentConfig,
+        clock: KoogClock
+    ): Output
+
+    public actual abstract suspend fun removeAgent(agent: TAgent): Boolean
+    public actual abstract suspend fun removeAgentWithId(id: String): Boolean
+    public actual abstract suspend fun agentById(id: String): TAgent?
+
+    /**
+     * Creates a new agent with the specified configuration and settings.
+     *
+     * @param id An optional unique identifier for the agent. If null, a default identifier may be generated.
+     * @param additionalToolRegistry The additional tool registry to be associated with the agent. Defaults to an empty registry.
+     * @param agentConfig The configuration to use for the agent. Defaults to the service's agent configuration.
+     * @param executorService The executor service to use for asynchronous operations. If null, a default executor may be used.
+     * @param clock The clock instance to be used for time-based functionalities. Defaults to the system clock.
+     * @return The created agent instance.
+     */
+    @JavaAPI
+    @JvmOverloads
+    public fun createAgent(
+        id: String? = null,
+        additionalToolRegistry: ToolRegistry = ToolRegistry.EMPTY,
+        agentConfig: AIAgentConfig = this.agentConfig,
+        executorService: ExecutorService? = null,
+        clock: KoogClock = KoogClock.System
+    ): TAgent = agentConfig.runBlockingOnStrategyDispatcher(executorService) {
+        createAgent(id, additionalToolRegistry, agentConfig, clock)
+    }
+
+    /**
+     * Creates an AI agent using the specified parameters and immediately runs it with the provided input.
+     *
+     * @param agentInput The input data to be processed by the agent.
+     * @param id An optional identifier for the agent. If null, a default identifier may be used.
+     * @param additionalToolRegistry A registry of additional tools available to the agent. Defaults to an empty registry.
+     * @param agentConfig Configuration settings for the agent. Defaults to the current agent configuration of the service.
+     * @param executorService An optional executor service to be used for running the agent. If null, a default executor may be used.
+     * @param clock The clock instance to be used for time-based operations within the agent.
+     * @return The output produced by running the agent with the provided input.
+     */
+    @JavaAPI
+    @JvmOverloads
+    public fun createAgentAndRun(
+        agentInput: Input,
+        id: String?,
+        additionalToolRegistry: ToolRegistry = ToolRegistry.EMPTY,
+        agentConfig: AIAgentConfig = this.agentConfig,
+        executorService: ExecutorService? = null,
+        clock: KoogClock
+    ): Output = createAgent(id, additionalToolRegistry, agentConfig, executorService, clock)
+        .javaNonSuspendRun(agentInput, null, executorService)
+
+    /**
+     * Removes the specified agent from the system.
+     *
+     * This method uses the provided executor service to execute the removal operation,
+     * or defaults to the strategy dispatcher if no executor service is provided.
+     *
+     * @param agent The agent to be removed.
+     * @param executorService Optional executor service to manage the removal operation.
+     * @return True if the agent was successfully removed; false otherwise.
+     */
+    @JavaAPI
+    @JvmOverloads
+    public fun removeAgent(
+        agent: TAgent,
+        executorService: ExecutorService? = null
+    ): Boolean = agentConfig.runBlockingOnStrategyDispatcher(executorService) {
+        removeAgent(agent)
+    }
+
+    /**
+     * Removes an agent identified by the provided ID.
+     *
+     * @param id The unique identifier of the agent to be removed.
+     * @param executorService An optional `ExecutorService` that can be provided to control the execution context.
+     * @return `true` if the agent was successfully removed, otherwise `false`.
+     */
+    @JavaAPI
+    @JvmOverloads
+    public fun removeAgentWithId(
+        id: String,
+        executorService: ExecutorService? = null
+    ): Boolean = agentConfig.runBlockingOnStrategyDispatcher(executorService) {
+        removeAgentWithId(id)
+    }
+
+    /**
+     * Fetches an agent by its unique identifier.
+     *
+     * This function retrieves an agent using the specified identifier and allows optional execution within a custom
+     * executor service. The method leverages the strategy dispatcher to execute the retrieval logic.
+     *
+     * @param id The unique identifier of the agent to be retrieved.
+     * @param executorService An optional executor service to run the task. If not provided, the default dispatcher is used.
+     * @return The agent corresponding to the specified identifier, or null if no agent is found.
+     */
+    @JavaAPI
+    @JvmOverloads
+    public fun agentById(
+        id: String,
+        executorService: ExecutorService? = null
+    ): TAgent? = agentConfig.runBlockingOnStrategyDispatcher(executorService) {
+        agentById(id)
+    }
+
+    public actual companion object {
+        @JvmStatic
+        public actual fun builder(): AIAgentServiceBuilder = AIAgentServiceBuilder()
+
+        @OptIn(markerClass = [InternalAgentsApi::class])
+        public actual inline fun <reified Input, reified Output> fromAgent(
+            agent: GraphAIAgent<Input, Output>
+        ): AIAgentService<Input, Output, GraphAIAgent<Input, Output>> = AIAgentService(
+            promptExecutor = agent.promptExecutor,
+            agentConfig = agent.agentConfig,
+            strategy = agent.strategy,
+            toolRegistry = agent.toolRegistry,
+            installFeatures = agent.installFeatures
+        )
+
+        @OptIn(markerClass = [InternalAgentsApi::class])
+        public actual fun <Input, Output> fromAgent(
+            agent: FunctionalAIAgent<Input, Output>
+        ): AIAgentService<Input, Output, FunctionalAIAgent<Input, Output>> = AIAgentService(
+            promptExecutor = agent.promptExecutor,
+            agentConfig = agent.agentConfig,
+            strategy = agent.strategy,
+            toolRegistry = agent.toolRegistry,
+            installFeatures = agent.installFeatures
+        )
+    }
+}

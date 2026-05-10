@@ -6,8 +6,8 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
+import ai.koog.utils.time.KoogClock
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 
 internal object BedrockMetaLlamaSerialization {
@@ -42,7 +42,7 @@ internal object BedrockMetaLlamaSerialization {
         )
     }
 
-    internal fun parseLlamaResponse(responseBody: String, clock: Clock = Clock.System): List<Message.Response> {
+    internal fun parseLlamaResponse(responseBody: String, clock: KoogClock = KoogClock.System): List<Message.Response> {
         val response = json.decodeFromString<LlamaResponse>(responseBody)
 
         return listOf(
@@ -61,10 +61,10 @@ internal object BedrockMetaLlamaSerialization {
         )
     }
 
-    internal fun parseLlamaStreamChunk(chunkJsonString: String, clock: Clock = Clock.System): List<StreamFrame> {
+    internal fun parseLlamaStreamChunk(chunkJsonString: String, clock: KoogClock = KoogClock.System): List<StreamFrame> {
         val chunk = json.decodeFromString<LlamaStreamChunk>(chunkJsonString)
         return buildList {
-            chunk.generation?.let(StreamFrame::Append)?.let(::add)
+            chunk.generation?.let(StreamFrame::TextDelta)?.let(::add)
             if (chunk.stopReason != null) {
                 add(
                     StreamFrame.End(

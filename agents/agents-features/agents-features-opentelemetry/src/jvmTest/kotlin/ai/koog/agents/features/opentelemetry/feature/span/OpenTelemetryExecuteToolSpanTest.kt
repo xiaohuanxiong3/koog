@@ -1,6 +1,5 @@
 package ai.koog.agents.features.opentelemetry.feature.span
 
-import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.nodeExecuteMultipleTools
 import ai.koog.agents.core.dsl.extension.nodeLLMRequestMultiple
@@ -14,16 +13,18 @@ import ai.koog.agents.features.opentelemetry.OpenTelemetryTestAPI.runAgentWithSi
 import ai.koog.agents.features.opentelemetry.OpenTelemetryTestAPI.runAgentWithStrategy
 import ai.koog.agents.features.opentelemetry.OpenTelemetryTestAPI.testClock
 import ai.koog.agents.features.opentelemetry.assertSpans
-import ai.koog.agents.features.opentelemetry.attribute.SpanAttributes.Operation.OperationNameType
+import ai.koog.agents.features.opentelemetry.attribute.GenAIAttributes.Operation.OperationNameType
 import ai.koog.agents.features.opentelemetry.feature.OpenTelemetryTestBase
 import ai.koog.agents.features.opentelemetry.mock.TestGetWeatherTool
 import ai.koog.agents.testing.tools.getMockExecutor
 import ai.koog.agents.utils.HiddenString
+import ai.koog.serialization.kotlinx.KotlinxSerializer
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
 class OpenTelemetryExecuteToolSpanTest : OpenTelemetryTestBase() {
+    private val serializer = KotlinxSerializer()
 
     @Test
     fun `test execute tool spans are collected`() = runTest {
@@ -46,17 +47,18 @@ class OpenTelemetryExecuteToolSpanTest : OpenTelemetryTestBase() {
         val actualSpans = collectedTestData.filterExecuteToolSpans()
         assertTrue(actualSpans.isNotEmpty(), "ExecuteTool spans should be created during agent execution")
 
-        val serializedArgs = TestGetWeatherTool.encodeArgsToString(mockToolCallResponse.arguments)
+        val serializedArgs = TestGetWeatherTool.encodeArgsToString(mockToolCallResponse.arguments, serializer)
 
         val expectedSpans = listOf(
             mapOf(
                 "${OperationNameType.EXECUTE_TOOL.id} ${TestGetWeatherTool.name}" to mapOf(
                     "attributes" to mapOf(
-                        "gen_ai.tool.call.result" to TestGetWeatherTool.encodeResult(mockToolCallResponse.toolResult).toString(),
+                        "gen_ai.tool.call.result" to TestGetWeatherTool.encodeResult(mockToolCallResponse.toolResult, serializer).toString(),
                         "gen_ai.tool.call.arguments" to serializedArgs,
                         "gen_ai.tool.name" to TestGetWeatherTool.name,
                         "gen_ai.tool.call.id" to mockToolCallResponse.toolCallId,
                         "gen_ai.operation.name" to OperationNameType.EXECUTE_TOOL.id,
+                        "gen_ai.provider.name" to "koog",
                         "gen_ai.tool.description" to TestGetWeatherTool.descriptor.description,
                         "koog.event.id" to collectedTestData.singleToolCallEventIdByToolName(TestGetWeatherTool.name),
                     ),
@@ -98,6 +100,7 @@ class OpenTelemetryExecuteToolSpanTest : OpenTelemetryTestBase() {
                         "gen_ai.tool.name" to TestGetWeatherTool.name,
                         "gen_ai.tool.call.id" to mockToolCallResponse.toolCallId,
                         "gen_ai.operation.name" to OperationNameType.EXECUTE_TOOL.id,
+                        "gen_ai.provider.name" to "koog",
                         "gen_ai.tool.description" to TestGetWeatherTool.descriptor.description,
                         "koog.event.id" to collectedTestData.singleToolCallEventIdByToolName(TestGetWeatherTool.name),
                     ),
@@ -141,13 +144,13 @@ class OpenTelemetryExecuteToolSpanTest : OpenTelemetryTestBase() {
         val toolArgsParis = TestGetWeatherTool.Args("Paris")
         val toolArgsLondon = TestGetWeatherTool.Args("London")
 
-        val serializedToolArgsParis = TestGetWeatherTool.encodeArgsToString(toolArgsParis)
-        val serializedToolArgsLondon = TestGetWeatherTool.encodeArgsToString(toolArgsLondon)
+        val serializedToolArgsParis = TestGetWeatherTool.encodeArgsToString(toolArgsParis, serializer)
+        val serializedToolArgsLondon = TestGetWeatherTool.encodeArgsToString(toolArgsLondon, serializer)
 
-        val serializedToolResultParis = TestGetWeatherTool.encodeResultToString(TestGetWeatherTool.DEFAULT_PARIS_RESULT)
-        val serializedToolResultLondon = TestGetWeatherTool.encodeResultToString(TestGetWeatherTool.DEFAULT_LONDON_RESULT)
+        val serializedToolResultParis = TestGetWeatherTool.encodeResultToString(TestGetWeatherTool.DEFAULT_PARIS_RESULT, serializer)
+        val serializedToolResultLondon = TestGetWeatherTool.encodeResultToString(TestGetWeatherTool.DEFAULT_LONDON_RESULT, serializer)
 
-        val executor = getMockExecutor(clock = testClock) {
+        val executor = getMockExecutor(serializer, testClock) {
             // Mock tool call
             val toolCalls = listOf(
                 TestGetWeatherTool to toolArgsParis,
@@ -170,20 +173,15 @@ class OpenTelemetryExecuteToolSpanTest : OpenTelemetryTestBase() {
         val actualSpans = collectedTestData.filterExecuteToolSpans()
             .sortedBy { span ->
                 // Filter by tool attributes stored in the 'gen_ai.tool.call.arguments' span attribute
-                val inputValueAttributes = span.attributes.asMap().filter { entry -> entry.key.key == "gen_ai.tool.call.arguments" }
-                inputValueAttributes.values.singleOrNull().toString()
+                span.attributes["gen_ai.tool.call.arguments"]?.toString() ?: ""
             }
 
         assertTrue(actualSpans.isNotEmpty(), "Tool Call event ids should be collected during agent execution")
 
         // Extract event IDs from the sorted spans to match them in order
-        val eventIdFromLondonSpan = actualSpans[0].attributes.asMap()
-            .filter { entry -> entry.key.key == "koog.event.id" }
-            .values.singleOrNull().toString()
+        val eventIdFromLondonSpan = actualSpans[0].attributes["koog.event.id"]?.toString() ?: ""
 
-        val eventIdFromParisSpan = actualSpans[1].attributes.asMap()
-            .filter { entry -> entry.key.key == "koog.event.id" }
-            .values.singleOrNull().toString()
+        val eventIdFromParisSpan = actualSpans[1].attributes["koog.event.id"]?.toString() ?: ""
 
         val expectedSpans = listOf(
             mapOf(
@@ -195,6 +193,7 @@ class OpenTelemetryExecuteToolSpanTest : OpenTelemetryTestBase() {
                         "gen_ai.tool.call.arguments" to serializedToolArgsLondon,
                         "gen_ai.tool.name" to TestGetWeatherTool.name,
                         "gen_ai.operation.name" to OperationNameType.EXECUTE_TOOL.id,
+                        "gen_ai.provider.name" to "koog",
                         "gen_ai.tool.description" to TestGetWeatherTool.descriptor.description,
                         "koog.event.id" to eventIdFromLondonSpan,
                     ),
@@ -210,6 +209,7 @@ class OpenTelemetryExecuteToolSpanTest : OpenTelemetryTestBase() {
                         "gen_ai.tool.call.arguments" to serializedToolArgsParis,
                         "gen_ai.tool.name" to TestGetWeatherTool.name,
                         "gen_ai.operation.name" to OperationNameType.EXECUTE_TOOL.id,
+                        "gen_ai.provider.name" to "koog",
                         "gen_ai.tool.description" to TestGetWeatherTool.descriptor.description,
                         "koog.event.id" to eventIdFromParisSpan,
                     ),

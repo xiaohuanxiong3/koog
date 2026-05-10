@@ -5,8 +5,7 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.params.LLMParams
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import ai.koog.utils.time.KoogClock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -18,15 +17,15 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
 import java.util.stream.Stream
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.time.Instant
 
 class PromptTest {
     companion object {
         val ts: Instant = Instant.parse("2023-01-01T00:00:00Z")
 
-        val testClock: Clock = object : Clock {
-            override fun now(): Instant = ts
-        }
+        val testClock: KoogClock = KoogClock { ts }
 
         val testRespMetaInfo = ResponseMetaInfo.create(testClock)
         val testReqMetaInfo = RequestMetaInfo.create(testClock)
@@ -308,7 +307,7 @@ class PromptTest {
         val emptyPrompt = Prompt.Empty
 
         assertTrue(emptyPrompt.messages.isEmpty())
-        assertEquals("", emptyPrompt.id)
+        assertEquals("default", emptyPrompt.id)
         assertEquals(LLMParams(), emptyPrompt.params)
 
         val json = Json.encodeToString(emptyPrompt)
@@ -316,7 +315,7 @@ class PromptTest {
 
         assertEquals(emptyPrompt, decoded)
         assertTrue(decoded.messages.isEmpty())
-        assertEquals("", decoded.id)
+        assertEquals("default", decoded.id)
     }
 
     @Test
@@ -420,7 +419,7 @@ class PromptTest {
 
     @Test
     fun testInvalidToolCallJsonContent() {
-        // contentJson property is now on StreamFrame.ToolCall, not Message.Tool.Call
+        // contentJson property is now on StreamFrame.ToolCallComplete, not Message.Tool.Call
         // This test is no longer applicable for Message.Tool.Call
         val toolCallWithInvalidJson = Message.Tool.Call(toolCallId, toolName, "invalid json", testRespMetaInfo)
         // Just verify the content is stored as-is
@@ -660,5 +659,41 @@ class PromptTest {
         assertEquals("new speculation", multiUpdatedPrompt.params.speculation)
         assertEquals(LLMParams.ToolChoice.Auto, multiUpdatedPrompt.params.toolChoice)
         assertEquals("new_user", multiUpdatedPrompt.params.user)
+    }
+
+    @Test
+    fun testWithUpdatedParamsPreservesLLMParamsSubtype() {
+        class CustomProviderParams(
+            temperature: Double? = null,
+            toolChoice: ToolChoice? = null,
+            val providerField: String? = null,
+        ) : LLMParams(temperature = temperature, toolChoice = toolChoice) {
+            override fun copy(
+                temperature: Double?,
+                maxTokens: Int?,
+                numberOfChoices: Int?,
+                speculation: String?,
+                schema: Schema?,
+                toolChoice: ToolChoice?,
+                user: String?,
+                additionalProperties: Map<String, kotlinx.serialization.json.JsonElement>?,
+            ): CustomProviderParams = CustomProviderParams(
+                temperature = temperature,
+                toolChoice = toolChoice,
+                providerField = providerField,
+            )
+        }
+
+        val originalParams = CustomProviderParams(temperature = 0.7, providerField = "provider-specific")
+        val prompt = Prompt.build("test", originalParams) { system("system") }
+
+        val updated = prompt.withUpdatedParams {
+            toolChoice = LLMParams.ToolChoice.Named("myTool")
+        }
+
+        assertIs<CustomProviderParams>(updated.params)
+        assertEquals(originalParams.providerField, updated.params.providerField)
+        assertEquals(LLMParams.ToolChoice.Named("myTool"), updated.params.toolChoice)
+        assertEquals(originalParams.temperature, updated.params.temperature)
     }
 }

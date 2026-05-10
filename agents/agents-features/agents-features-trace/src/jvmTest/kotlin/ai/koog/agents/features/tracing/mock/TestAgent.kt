@@ -15,14 +15,12 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
+import ai.koog.serialization.JSONElement
+import ai.koog.serialization.JSONObject
+import ai.koog.utils.time.KoogClock
+import kotlin.time.Instant
 
-internal val testClock: Clock = object : Clock {
-    override fun now(): Instant = Instant.parse("2023-01-01T00:00:00Z")
-}
+internal val testClock: KoogClock = KoogClock { Instant.parse("2023-01-01T00:00:00Z") }
 
 /**
  * Creates a user message with optional media attachments.
@@ -78,10 +76,10 @@ fun toolCallMessage(toolName: String, content: String): Message.Tool.Call =
 fun receivedToolResult(
     toolCallId: String?,
     toolName: String,
-    toolArgs: JsonObject,
+    toolArgs: JSONObject,
     toolDescription: String,
     content: String,
-    result: JsonElement
+    result: JSONElement
 ): ReceivedToolResult = ReceivedToolResult(
     id = toolCallId,
     tool = toolName,
@@ -89,7 +87,7 @@ fun receivedToolResult(
     toolDescription = toolDescription,
     content = content,
     resultKind = ToolResultKind.Success,
-    result = result
+    result = result,
 )
 
 /**

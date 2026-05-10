@@ -15,11 +15,11 @@ import ai.koog.agents.core.dsl.builder.BaseBuilder
 import ai.koog.agents.core.environment.AIAgentEnvironment
 import ai.koog.agents.core.feature.pipeline.AIAgentGraphPipeline
 import ai.koog.prompt.dsl.Prompt
-import ai.koog.prompt.llm.OllamaModels
+import ai.koog.prompt.executor.ollama.client.OllamaModels
 import ai.koog.prompt.message.Message
+import ai.koog.serialization.TypeToken
+import ai.koog.serialization.typeToken
 import org.jetbrains.annotations.TestOnly
-import kotlin.reflect.KType
-import kotlin.reflect.typeOf
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -58,7 +58,7 @@ public class DummyAIAgentContext(
 
     private var _environment: AIAgentEnvironment? = builder.environment
     private var _agentInput: Any? = builder.agentInput
-    private var _agentInputType: KType? = builder.agentInputType
+    private var _agentInputType: TypeToken? = builder.agentInputType
     private var _config: AIAgentConfig? = builder.config
     private var _llm: AIAgentLLMContext? = builder.llm
     private var _stateManager: AIAgentStateManager? = builder.stateManager
@@ -78,7 +78,7 @@ public class DummyAIAgentContext(
     override val agentInput: Any
         get() = _agentInput ?: throw NotImplementedError("Agent input is not mocked")
 
-    override val agentInputType: KType
+    override val agentInputType: TypeToken
         get() = _agentInputType ?: throw NotImplementedError("Agent input type is not mocked")
 
     override val config: AIAgentConfig
@@ -109,14 +109,17 @@ public class DummyAIAgentContext(
             _executionInfo = value
         }
 
+    @Suppress("DEPRECATION")
     override fun store(key: AIAgentStorageKey<*>, value: Any) {
         throw NotImplementedError("store() is not supported for mock")
     }
 
+    @Suppress("DEPRECATION")
     override fun <T> get(key: AIAgentStorageKey<*>): T {
         throw NotImplementedError("get() is not supported for mock")
     }
 
+    @Suppress("DEPRECATION")
     override fun remove(key: AIAgentStorageKey<*>): Boolean {
         throw NotImplementedError("remove() is not supported for mock")
     }
@@ -143,7 +146,7 @@ public class DummyAIAgentContext(
         environment: AIAgentEnvironment,
         agentId: String,
         agentInput: Any?,
-        agentInputType: KType,
+        agentInputType: TypeToken,
         config: AIAgentConfig,
         llm: AIAgentLLMContext,
         stateManager: AIAgentStateManager,
@@ -213,9 +216,9 @@ public interface AIAgentContextMockBuilderBase : BaseBuilder<AIAgentContext> {
     public var agentInput: Any?
 
     /**
-     * Represents the [KType] of the [agentInput].
+     * Represents the [TypeToken] of the [agentInput].
      */
-    public var agentInputType: KType?
+    public var agentInputType: TypeToken?
 
     /**
      * Specifies the configuration for the AI agent.
@@ -299,7 +302,7 @@ public interface AIAgentContextMockBuilderBase : BaseBuilder<AIAgentContext> {
     public fun copy(
         environment: AIAgentEnvironment? = this.environment,
         agentInput: Any? = this.agentInput,
-        agentInputType: KType? = this.agentInputType,
+        agentInputType: TypeToken? = this.agentInputType,
         config: AIAgentConfig? = this.config,
         llm: AIAgentLLMContext? = this.llm,
         stateManager: AIAgentStateManager? = this.stateManager,
@@ -349,9 +352,9 @@ public class AIAgentContextMockBuilder : AIAgentContextMockBuilderBase {
     override var agentInput: Any? = "test-input-default"
 
     /**
-     * Represents the [KType] of the [agentInput].
+     * Represents the [TypeToken] of the [agentInput].
      */
-    override var agentInputType: KType? = typeOf<String>()
+    override var agentInputType: TypeToken? = typeToken<String>()
 
     /**
      * Represents the AI agent configuration used in the mock builder.
@@ -444,7 +447,7 @@ public class AIAgentContextMockBuilder : AIAgentContextMockBuilderBase {
     override fun copy(
         environment: AIAgentEnvironment?,
         agentInput: Any?,
-        agentInputType: KType?,
+        agentInputType: TypeToken?,
         config: AIAgentConfig?,
         llm: AIAgentLLMContext?,
         stateManager: AIAgentStateManager?,

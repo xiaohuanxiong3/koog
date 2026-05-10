@@ -6,7 +6,7 @@ package ai.koog.agents.core.feature.pipeline
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.agent.context.AIAgentGraphContextBase
 import ai.koog.agents.core.agent.entity.AIAgentNodeBase
-import ai.koog.agents.core.agent.entity.AIAgentSubgraph
+import ai.koog.agents.core.agent.entity.AIAgentSubgraphBase
 import ai.koog.agents.core.agent.execution.AgentExecutionInfo
 import ai.koog.agents.core.annotation.InternalAgentsApi
 import ai.koog.agents.core.feature.AIAgentGraphFeature
@@ -17,8 +17,8 @@ import ai.koog.agents.core.feature.handler.node.NodeExecutionStartingContext
 import ai.koog.agents.core.feature.handler.subgraph.SubgraphExecutionCompletedContext
 import ai.koog.agents.core.feature.handler.subgraph.SubgraphExecutionFailedContext
 import ai.koog.agents.core.feature.handler.subgraph.SubgraphExecutionStartingContext
-import kotlinx.datetime.Clock
-import kotlin.reflect.KType
+import ai.koog.serialization.TypeToken
+import ai.koog.utils.time.KoogClock
 
 /**
  * Represents a pipeline for AI agent graph execution, extending the functionality of `AIAgentPipeline`.
@@ -28,7 +28,7 @@ import kotlin.reflect.KType
  */
 public expect open class AIAgentGraphPipeline(
     agentConfig: AIAgentConfig,
-    clock: Clock = Clock.System,
+    clock: KoogClock = KoogClock.System,
     basePipelineDelegate: AIAgentPipelineImpl = AIAgentPipelineImpl(agentConfig, clock)
 ) : AIAgentPipeline, AIAgentGraphPipelineAPI {
 
@@ -60,13 +60,14 @@ public expect open class AIAgentGraphPipeline(
      * @param input The input data for the node execution
      * @param inputType The type of the input data provided to the node
      */
+    @InternalAgentsApi
     public open override suspend fun onNodeExecutionStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
         node: AIAgentNodeBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType
+        inputType: TypeToken
     )
 
     /**
@@ -81,15 +82,16 @@ public expect open class AIAgentGraphPipeline(
      * @param output The output data produced by the node execution
      * @param outputType The type of the output data produced by the node execution
      */
+    @InternalAgentsApi
     public open override suspend fun onNodeExecutionCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
         node: AIAgentNodeBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType,
+        inputType: TypeToken,
         output: Any?,
-        outputType: KType,
+        outputType: TypeToken,
     )
 
     /**
@@ -101,16 +103,17 @@ public expect open class AIAgentGraphPipeline(
      * @param context The context associated with the AI agent executing the node.
      * @param input The input data provided to the node.
      * @param inputType The type of the input data provided to the node.
-     * @param throwable The exception or error that occurred during node execution.
+     * @param error The exception or error that occurred during node execution.
      */
+    @InternalAgentsApi
     public open override suspend fun onNodeExecutionFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
         node: AIAgentNodeBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType,
-        throwable: Throwable
+        inputType: TypeToken,
+        error: Throwable
     )
 
     //endregion Trigger Node Handlers
@@ -127,13 +130,14 @@ public expect open class AIAgentGraphPipeline(
      * @param input The input data for the subgraph execution.
      * @param inputType The type of the input data provided to the subgraph.
      */
+    @InternalAgentsApi
     public open override suspend fun onSubgraphExecutionStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        subgraph: AIAgentSubgraph<*, *>,
+        subgraph: AIAgentSubgraphBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType
+        inputType: TypeToken
     )
 
     /**
@@ -148,15 +152,16 @@ public expect open class AIAgentGraphPipeline(
      * @param output The output data produced by the subgraph execution.
      * @param outputType The type of the output data produced by the subgraph execution.
      */
+    @InternalAgentsApi
     public open override suspend fun onSubgraphExecutionCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        subgraph: AIAgentSubgraph<*, *>,
+        subgraph: AIAgentSubgraphBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType,
+        inputType: TypeToken,
         output: Any?,
-        outputType: KType,
+        outputType: TypeToken,
     )
 
     /**
@@ -168,16 +173,17 @@ public expect open class AIAgentGraphPipeline(
      * @param context The agent context in which the subgraph execution occurred.
      * @param input The input data that was provided to the subgraph when it failed.
      * @param inputType The type of the input data provided to the subgraph.
-     * @param throwable The exception or error that caused the subgraph execution to fail.
+     * @param error The exception or error that caused the subgraph execution to fail.
      */
+    @InternalAgentsApi
     public open override suspend fun onSubgraphExecutionFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        subgraph: AIAgentSubgraph<*, *>,
+        subgraph: AIAgentSubgraphBase<*, *>,
         context: AIAgentGraphContextBase,
         input: Any?,
-        inputType: KType,
-        throwable: Throwable
+        inputType: TypeToken,
+        error: Throwable
     )
 
     //endregion Trigger Subgraph Handlers
@@ -229,7 +235,7 @@ public expect open class AIAgentGraphPipeline(
      * Example:
      * ```
      * pipeline.interceptNodeExecutionFailed(feature) { eventContext ->
-     *     logger.error("Node ${eventContext.node.name} execution failed with error: ${eventContext.throwable}")
+     *     logger.error("Node ${eventContext.node.name} execution failed with error: ${eventContext.error}")
      * }
      * ```
      */
@@ -284,7 +290,7 @@ public expect open class AIAgentGraphPipeline(
      * Example:
      * ```
      * pipeline.interceptSubgraphExecutionFailed(feature) { eventContext ->
-     *     logger.error("Subgraph ${eventContext.subgraph.name} execution failed with error: ${eventContext.throwable}")
+     *     logger.error("Subgraph ${eventContext.subgraph.name} execution failed with error: ${eventContext.error}")
      * }
      * ```
      */

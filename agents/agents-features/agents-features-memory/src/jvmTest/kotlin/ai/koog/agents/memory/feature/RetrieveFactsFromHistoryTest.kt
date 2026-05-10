@@ -14,26 +14,26 @@ import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
+import ai.koog.serialization.kotlinx.KotlinxSerializer
+import ai.koog.utils.time.KoogClock
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 class RetrieveFactsFromHistoryTest {
+    private val serializer = KotlinxSerializer()
 
     private val testModel = mockk<LLModel> {
         every { id } returns "test-model"
         every { provider } returns mockk<LLMProvider>()
     }
 
-    private val testClock: Clock = object : Clock {
-        override fun now(): Instant = Instant.parse("2023-01-01T00:00:00Z")
-    }
+    private val testClock: KoogClock = KoogClock { Instant.parse("2023-01-01T00:00:00Z") }
     private val testTimestamp = testClock.now().toEpochMilliseconds()
 
     /**
@@ -46,7 +46,7 @@ class RetrieveFactsFromHistoryTest {
         val factText = "This is a test fact"
 
         // Create a mock prompt executor that returns a response with the fact
-        val promptExecutor = getMockExecutor(clock = testClock) {
+        val promptExecutor = getMockExecutor(serializer, testClock) {
             mockLLMAnswer("""{"fact": "$factText"}""").asDefaultResponse
         }
 
@@ -60,7 +60,7 @@ class RetrieveFactsFromHistoryTest {
             model = testModel,
             responseProcessor = null,
             promptExecutor = promptExecutor,
-            environment = MockEnvironment(toolRegistry = ToolRegistry.EMPTY, promptExecutor),
+            environment = MockEnvironment(ToolRegistry.EMPTY, promptExecutor, serializer),
             config = AIAgentConfig(Prompt.Empty, testModel, 100),
             clock = testClock
         )
@@ -88,7 +88,7 @@ class RetrieveFactsFromHistoryTest {
         val factsList = listOf("Fact 1", "Fact 2", "Fact 3")
 
         // Create a mock prompt executor that returns a response with multiple facts
-        val promptExecutor = getMockExecutor(clock = testClock) {
+        val promptExecutor = getMockExecutor(serializer, testClock) {
             mockLLMAnswer(
                 """{"facts": [{"fact": "Fact 1"}, {"fact": "Fact 2"}, {"fact": "Fact 3"}]}"""
             ).asDefaultResponse
@@ -104,7 +104,7 @@ class RetrieveFactsFromHistoryTest {
             model = testModel,
             responseProcessor = null,
             promptExecutor = promptExecutor,
-            environment = MockEnvironment(toolRegistry = ToolRegistry.EMPTY, promptExecutor),
+            environment = MockEnvironment(ToolRegistry.EMPTY, promptExecutor, serializer),
             config = AIAgentConfig(Prompt.Empty, testModel, 100),
             clock = testClock
         )
@@ -131,7 +131,7 @@ class RetrieveFactsFromHistoryTest {
         val concept = Concept("test-concept", "Test concept description", FactType.SINGLE)
 
         // Create a mock prompt executor that returns an invalid JSON response
-        val promptExecutor = getMockExecutor(clock = testClock) {
+        val promptExecutor = getMockExecutor(serializer, testClock) {
             mockLLMAnswer("""invalid json""").asDefaultResponse
         }
 
@@ -145,7 +145,7 @@ class RetrieveFactsFromHistoryTest {
             model = testModel,
             responseProcessor = null,
             promptExecutor = promptExecutor,
-            environment = MockEnvironment(toolRegistry = ToolRegistry.EMPTY, promptExecutor),
+            environment = MockEnvironment(ToolRegistry.EMPTY, promptExecutor, serializer),
             config = AIAgentConfig(Prompt.Empty, testModel, 100),
             clock = testClock
         )
@@ -172,7 +172,7 @@ class RetrieveFactsFromHistoryTest {
         val concept = Concept("test-concept", "Test concept description", FactType.MULTIPLE)
 
         // Create a mock prompt executor that returns an invalid JSON response
-        val promptExecutor = getMockExecutor(clock = testClock) {
+        val promptExecutor = getMockExecutor(serializer, testClock) {
             mockLLMAnswer("""invalid json""").asDefaultResponse
         }
 
@@ -186,7 +186,7 @@ class RetrieveFactsFromHistoryTest {
             model = testModel,
             responseProcessor = null,
             promptExecutor = promptExecutor,
-            environment = MockEnvironment(toolRegistry = ToolRegistry.EMPTY, promptExecutor),
+            environment = MockEnvironment(ToolRegistry.EMPTY, promptExecutor, serializer),
             config = AIAgentConfig(Prompt.Empty, testModel, 100),
             clock = testClock
         )
@@ -218,7 +218,7 @@ class RetrieveFactsFromHistoryTest {
         val factText = "This is a test fact"
 
         // Create a mock prompt executor that returns a response with the fact
-        val promptExecutor = getMockExecutor(clock = testClock) {
+        val promptExecutor = getMockExecutor(serializer, testClock) {
             mockLLMAnswer("""{"fact": "$factText"}""").asDefaultResponse
         }
 
@@ -237,7 +237,7 @@ class RetrieveFactsFromHistoryTest {
             model = testModel,
             responseProcessor = null,
             promptExecutor = promptExecutor,
-            environment = MockEnvironment(toolRegistry = ToolRegistry.EMPTY, promptExecutor),
+            environment = MockEnvironment(ToolRegistry.EMPTY, promptExecutor, serializer),
             config = AIAgentConfig(Prompt.Empty, testModel, 100),
             clock = testClock
         )

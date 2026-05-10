@@ -25,6 +25,7 @@ import ai.koog.agents.core.feature.handler.agent.AgentEnvironmentTransformingCon
 import ai.koog.agents.core.feature.handler.agent.AgentExecutionFailedContext
 import ai.koog.agents.core.feature.handler.agent.AgentStartingContext
 import ai.koog.agents.core.feature.handler.llm.LLMCallCompletedContext
+import ai.koog.agents.core.feature.handler.llm.LLMCallFailedContext
 import ai.koog.agents.core.feature.handler.llm.LLMCallStartingContext
 import ai.koog.agents.core.feature.handler.strategy.StrategyCompletedContext
 import ai.koog.agents.core.feature.handler.strategy.StrategyStartingContext
@@ -36,7 +37,6 @@ import ai.koog.agents.core.feature.handler.tool.ToolCallCompletedContext
 import ai.koog.agents.core.feature.handler.tool.ToolCallFailedContext
 import ai.koog.agents.core.feature.handler.tool.ToolCallStartingContext
 import ai.koog.agents.core.feature.handler.tool.ToolValidationFailedContext
-import ai.koog.agents.core.feature.model.AIAgentError
 import ai.koog.agents.core.system.getEnvironmentVariableOrNull
 import ai.koog.agents.core.system.getVMOptionOrNull
 import ai.koog.agents.core.tools.ToolDescriptor
@@ -45,12 +45,12 @@ import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.streaming.StreamFrame
+import ai.koog.serialization.JSONElement
+import ai.koog.serialization.JSONObject
+import ai.koog.serialization.TypeToken
+import ai.koog.utils.time.KoogClock
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.datetime.Clock
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlin.reflect.KClass
-import kotlin.reflect.KType
 import kotlin.reflect.safeCast
 
 /**
@@ -58,7 +58,7 @@ import kotlin.reflect.safeCast
  */
 public class AIAgentPipelineImpl(
     override val config: AIAgentConfig,
-    public override val clock: Clock
+    public override val clock: KoogClock
 ) : AIAgentPipelineAPI {
 
     // Notes on suppressed warnings used in this class:
@@ -92,7 +92,6 @@ public class AIAgentPipelineImpl(
         Debugger.key
     )
 
-    // TODO: SD -- add comment
     private val agentLifecycleHandlersCollector = AgentLifecycleHandlersCollector()
 
     public override fun <TFeature : Any> feature(
@@ -168,8 +167,7 @@ public class AIAgentPipelineImpl(
 
     //region Invoke Agent Handlers
 
-    // TODO: SD -- rename all to invokeOnAgentStarting
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun <TInput, TOutput> onAgentStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -183,7 +181,7 @@ public class AIAgentPipelineImpl(
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onAgentCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -198,22 +196,22 @@ public class AIAgentPipelineImpl(
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onAgentExecutionFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
         agentId: String,
         runId: String,
-        throwable: Throwable,
+        error: Throwable,
         context: AIAgentContext
     ) {
         invokeRegisteredHandlersForEvent(
             eventType = AgentLifecycleEventType.AgentExecutionFailed,
-            context = AgentExecutionFailedContext(eventId, executionInfo, agentId, runId, throwable, context)
+            context = AgentExecutionFailedContext(eventId, executionInfo, agentId, runId, error, context)
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onAgentClosing(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -225,13 +223,13 @@ public class AIAgentPipelineImpl(
         )
     }
 
+    @InternalAgentsApi
     public override suspend fun onAgentEnvironmentTransforming(
         eventId: String,
         executionInfo: AgentExecutionInfo,
         agent: GraphAIAgent<*, *>,
         baseEnvironment: AIAgentEnvironment
     ): AIAgentEnvironment {
-        @OptIn(InternalAgentsApi::class)
         return invokeRegisteredHandlersForEvent(
             eventType = AgentLifecycleEventType.AgentEnvironmentTransforming,
             context = AgentEnvironmentTransformingContext(eventId, executionInfo, agent, config),
@@ -243,7 +241,7 @@ public class AIAgentPipelineImpl(
 
     //region Invoke Strategy Handlers
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onStrategyStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -256,14 +254,14 @@ public class AIAgentPipelineImpl(
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onStrategyCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
         strategy: AIAgentStrategy<*, *, *>,
         context: AIAgentContext,
         result: Any?,
-        resultType: KType
+        resultType: TypeToken
     ) {
         invokeRegisteredHandlersForEvent(
             eventType = AgentLifecycleEventType.StrategyCompleted,
@@ -275,7 +273,7 @@ public class AIAgentPipelineImpl(
 
     //region Invoke LLM Call Handlers
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onLLMCallStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -291,7 +289,7 @@ public class AIAgentPipelineImpl(
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onLLMCallCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -309,11 +307,27 @@ public class AIAgentPipelineImpl(
         )
     }
 
+    override suspend fun onLLMCallFailed(
+        eventId: String,
+        executionInfo: AgentExecutionInfo,
+        runId: String,
+        prompt: Prompt,
+        model: LLModel,
+        tools: List<ToolDescriptor>,
+        context: AIAgentContext,
+        error: Throwable
+    ) {
+        invokeRegisteredHandlersForEvent(
+            eventType = AgentLifecycleEventType.LLMCallFailed,
+            context = LLMCallFailedContext(eventId, executionInfo, runId, prompt, model, tools, context, error)
+        )
+    }
+
     //endregion Invoke LLM Call Handlers
 
     //region Invoke Tool Call Handlers
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onToolCallStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -321,7 +335,7 @@ public class AIAgentPipelineImpl(
         toolCallId: String?,
         toolName: String,
         toolDescription: String?,
-        toolArgs: JsonObject,
+        toolArgs: JSONObject,
         context: AIAgentContext
     ) {
         invokeRegisteredHandlersForEvent(
@@ -339,7 +353,7 @@ public class AIAgentPipelineImpl(
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onToolValidationFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -347,9 +361,9 @@ public class AIAgentPipelineImpl(
         toolCallId: String?,
         toolName: String,
         toolDescription: String?,
-        toolArgs: JsonObject,
+        toolArgs: JSONObject,
         message: String,
-        error: AIAgentError,
+        error: Throwable,
         context: AIAgentContext
     ) {
         invokeRegisteredHandlersForEvent(
@@ -369,7 +383,7 @@ public class AIAgentPipelineImpl(
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onToolCallFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -377,9 +391,9 @@ public class AIAgentPipelineImpl(
         toolCallId: String?,
         toolName: String,
         toolDescription: String?,
-        toolArgs: JsonObject,
+        toolArgs: JSONObject,
         message: String,
-        error: AIAgentError?,
+        error: Throwable?,
         context: AIAgentContext
     ) {
         invokeRegisteredHandlersForEvent(
@@ -399,7 +413,7 @@ public class AIAgentPipelineImpl(
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onToolCallCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -407,8 +421,8 @@ public class AIAgentPipelineImpl(
         toolCallId: String?,
         toolName: String,
         toolDescription: String?,
-        toolArgs: JsonObject,
-        toolResult: JsonElement?,
+        toolArgs: JSONObject,
+        toolResult: JSONElement?,
         context: AIAgentContext
     ) {
         invokeRegisteredHandlersForEvent(
@@ -431,7 +445,7 @@ public class AIAgentPipelineImpl(
 
     //region Invoke LLM Streaming
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onLLMStreamingStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -447,7 +461,7 @@ public class AIAgentPipelineImpl(
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onLLMStreamingFrameReceived(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -463,23 +477,23 @@ public class AIAgentPipelineImpl(
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onLLMStreamingFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
         runId: String,
         prompt: Prompt,
         model: LLModel,
-        throwable: Throwable,
+        error: Throwable,
         context: AIAgentContext
     ) {
         invokeRegisteredHandlersForEvent(
             eventType = AgentLifecycleEventType.LLMStreamingFailed,
-            context = LLMStreamingFailedContext(eventId, executionInfo, runId, prompt, model, throwable, context)
+            context = LLMStreamingFailedContext(eventId, executionInfo, runId, prompt, model, error, context)
         )
     }
 
-    @OptIn(InternalAgentsApi::class)
+    @InternalAgentsApi
     public override suspend fun onLLMStreamingCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
@@ -511,8 +525,6 @@ public class AIAgentPipelineImpl(
         )
     }
 
-    // TODO: SD -- rename all to
-    //  onAgentStarting(...)
     @OptIn(InternalAgentsApi::class)
     public override fun interceptAgentStarting(
         feature: AIAgentFeature<*, *>,
@@ -605,6 +617,18 @@ public class AIAgentPipelineImpl(
         addHandlerForFeature(
             featureKey = feature.key,
             eventType = AgentLifecycleEventType.LLMCallCompleted,
+            handler = createConditionalHandler(feature, handle)
+        )
+    }
+
+    @OptIn(InternalAgentsApi::class)
+    public override fun interceptLLMCallFailed(
+        feature: AIAgentFeature<*, *>,
+        handle: suspend (eventContext: LLMCallFailedContext) -> Unit
+    ) {
+        addHandlerForFeature(
+            featureKey = feature.key,
+            eventType = AgentLifecycleEventType.LLMCallFailed,
             handler = createConditionalHandler(feature, handle)
         )
     }

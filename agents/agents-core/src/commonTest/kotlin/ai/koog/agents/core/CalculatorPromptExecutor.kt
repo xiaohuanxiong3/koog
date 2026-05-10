@@ -8,17 +8,17 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
-import ai.koog.prompt.streaming.toStreamFrame
+import ai.koog.prompt.streaming.toStreamFrames
+import ai.koog.utils.time.KoogClock
 import io.ktor.utils.io.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.time.Instant
 
-object CalculatorChatExecutor : PromptExecutor {
+object CalculatorChatExecutor : PromptExecutor() {
     private val json = Json {
         ignoreUnknownKeys = true
         allowStructuredMapKeys = true
@@ -26,9 +26,7 @@ object CalculatorChatExecutor : PromptExecutor {
 
     private val plusAliases = listOf("add", "sum", "plus")
 
-    val testClock: Clock = object : Clock {
-        override fun now(): Instant = Instant.parse("2023-01-01T00:00:00Z")
-    }
+    val testClock: KoogClock = KoogClock { Instant.parse("2023-01-01T00:00:00Z") }
 
     override suspend fun execute(prompt: Prompt, model: LLModel, tools: List<ToolDescriptor>): List<Message.Response> {
         val input = prompt.messages.filterIsInstance<Message.User>().joinToString("\n") { it.content }
@@ -60,9 +58,7 @@ object CalculatorChatExecutor : PromptExecutor {
     ): Flow<StreamFrame> =
         flow {
             try {
-                execute(prompt, model, tools).forEach {
-                    emit(it.toStreamFrame())
-                }
+                execute(prompt, model, tools).toStreamFrames().forEach { emit(it) }
             } catch (t: CancellationException) {
                 throw t
             } catch (t: Throwable) {

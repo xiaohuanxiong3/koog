@@ -7,12 +7,13 @@ import ai.koog.agents.core.agent.GraphAIAgent.FeatureContext
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.agent.entity.AIAgentGraphStrategy
 import ai.koog.agents.core.agent.entity.AIAgentStorageKey
-import ai.koog.agents.core.agent.entity.AIAgentSubgraph.Companion.FINISH_NODE_PREFIX
-import ai.koog.agents.core.agent.entity.AIAgentSubgraph.Companion.START_NODE_PREFIX
+import ai.koog.agents.core.agent.entity.AIAgentSubgraphBase.Companion.FINISH_NODE_PREFIX
+import ai.koog.agents.core.agent.entity.AIAgentSubgraphBase.Companion.START_NODE_PREFIX
 import ai.koog.agents.core.agent.entity.createStorageKey
 import ai.koog.agents.core.agent.execution.DEFAULT_AGENT_PATH_SEPARATOR
-import ai.koog.agents.core.dsl.builder.forwardTo
+import ai.koog.agents.core.dsl.builder.node
 import ai.koog.agents.core.dsl.builder.strategy
+import ai.koog.agents.core.dsl.builder.subgraph
 import ai.koog.agents.core.dsl.extension.nodeDoNothing
 import ai.koog.agents.core.dsl.extension.nodeExecuteTool
 import ai.koog.agents.core.dsl.extension.nodeLLMRequest
@@ -43,13 +44,13 @@ import ai.koog.agents.testing.tools.DummyTool
 import ai.koog.agents.testing.tools.getMockExecutor
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.PromptExecutor
-import ai.koog.prompt.llm.OllamaModels
+import ai.koog.prompt.executor.ollama.client.OllamaModels
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.Message.Role
+import ai.koog.serialization.kotlinx.KotlinxSerializer
 import ai.koog.utils.io.use
+import ai.koog.utils.time.KoogClock
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.js.JsName
 import kotlin.test.Test
@@ -57,16 +58,16 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
+import kotlin.time.Instant
 
 class AIAgentPipelineTest {
+    private val serializer = KotlinxSerializer()
 
     companion object {
         private const val DEFAULT_ASSISTANT_RESPONSE = "Default test response"
     }
 
-    private val testClock: Clock = object : Clock {
-        override fun now(): Instant = Instant.parse("2023-01-01T00:00:00Z")
-    }
+    private val testClock: KoogClock = KoogClock { Instant.parse("2023-01-01T00:00:00Z") }
 
     @Test
     @JsName("testPipelineInterceptorsForNodeEvents")
@@ -500,10 +501,10 @@ class AIAgentPipelineTest {
 
         val expectedEvents = listOf(
             "${ToolCallStarting::class.simpleName} (path: ${agentExecutionPath(agentId, strategyName, nodeToolCallName)}, tool: ${CalculatorTools.PlusTool.name}, args: ${
-                CalculatorTools.PlusTool.encodeArgs(CalculatorTools.CalculatorTool.Args(2.2F, 2.2F))
+                CalculatorTools.PlusTool.encodeArgs(CalculatorTools.CalculatorTool.Args(2.2F, 2.2F), serializer)
             })",
             "${ToolCallCompleted::class.simpleName} (path: ${agentExecutionPath(agentId, strategyName, nodeToolCallName)}, tool: ${CalculatorTools.PlusTool.name}, result: ${
-                CalculatorTools.PlusTool.encodeResult(CalculatorTools.CalculatorTool.Result(4.4F))
+                CalculatorTools.PlusTool.encodeResult(CalculatorTools.CalculatorTool.Result(4.4F), serializer)
             })"
         )
 
@@ -768,10 +769,10 @@ class AIAgentPipelineTest {
 
         val expectedEvents = listOf(
             "${ToolCallStarting::class.simpleName} (path: ${agentExecutionPath(agentId, strategyName, nodeToolCallName)}, tool: ${CalculatorTools.PlusTool.name}, args: ${
-                CalculatorTools.PlusTool.encodeArgs(CalculatorTools.CalculatorTool.Args(2.2F, 2.2F))
+                CalculatorTools.PlusTool.encodeArgs(CalculatorTools.CalculatorTool.Args(2.2F, 2.2F), serializer)
             })",
             "${ToolCallCompleted::class.simpleName} (path: ${agentExecutionPath(agentId, strategyName, nodeToolCallName)}, tool: ${CalculatorTools.PlusTool.name}, result: ${
-                CalculatorTools.PlusTool.encodeResult(CalculatorTools.CalculatorTool.Result(4.4F))
+                CalculatorTools.PlusTool.encodeResult(CalculatorTools.CalculatorTool.Result(4.4F), serializer)
             })"
         )
 
@@ -815,7 +816,7 @@ class AIAgentPipelineTest {
 
         createAgent(
             strategy = strategy,
-            promptExecutor = getMockExecutor { }
+            promptExecutor = getMockExecutor(serializer) { }
         ) {
             install(TestFeature) {
                 events = interceptedEvents
@@ -871,7 +872,11 @@ class AIAgentPipelineTest {
         val actualEvents = mutableListOf<String>()
         val multipleHandlers = object : AIAgentGraphFeature<FeatureConfig, Unit> {
             override val key: AIAgentStorageKey<Unit> = createStorageKey("multiple-handlers-feature")
-            override fun createInitialConfig(): FeatureConfig = object : FeatureConfig() {}
+
+            override fun createInitialConfig(
+                agentConfig: AIAgentConfig,
+            ): FeatureConfig = object : FeatureConfig() {}
+
             override fun install(config: FeatureConfig, pipeline: AIAgentGraphPipeline) {
                 pipeline.interceptAgentStarting(this) { event ->
                     actualEvents += "Handler 1: ${event.eventType::class.simpleName}"
@@ -922,7 +927,11 @@ class AIAgentPipelineTest {
 
         val environmentTransformFeature = object : AIAgentGraphFeature<FeatureConfig, Unit> {
             override val key: AIAgentStorageKey<Unit> = createStorageKey("env-transform-feature")
-            override fun createInitialConfig(): FeatureConfig = object : FeatureConfig() {}
+
+            override fun createInitialConfig(
+                agentConfig: AIAgentConfig,
+            ): FeatureConfig = object : FeatureConfig() {}
+
             override fun install(config: FeatureConfig, pipeline: AIAgentGraphPipeline) {
                 pipeline.interceptEnvironmentCreated(this) { _, environment ->
                     val updatedEnvironment = WrapperEnvironment("Modified environment 1", environment)
@@ -973,7 +982,11 @@ class AIAgentPipelineTest {
 
         fun createFeature(name: String) = object : AIAgentGraphFeature<FeatureConfig, Unit> {
             override val key: AIAgentStorageKey<Unit> = createStorageKey("$name-feature")
-            override fun createInitialConfig(): FeatureConfig = object : FeatureConfig() {}
+
+            override fun createInitialConfig(
+                agentConfig: AIAgentConfig,
+            ): FeatureConfig = object : FeatureConfig() {}
+
             override fun install(config: FeatureConfig, pipeline: AIAgentGraphPipeline) {
                 pipeline.interceptAgentStarting(this) { _ ->
                     actualEvents += name
@@ -1024,7 +1037,7 @@ class AIAgentPipelineTest {
             maxAgentIterations = 10
         )
 
-        val testExecutor = getMockExecutor(clock = testClock) {
+        val testExecutor = getMockExecutor(serializer, clock = testClock) {
             mockLLMAnswer(DEFAULT_ASSISTANT_RESPONSE).asDefaultResponse
         }
 

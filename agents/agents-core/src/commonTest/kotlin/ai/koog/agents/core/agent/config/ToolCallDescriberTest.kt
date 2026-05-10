@@ -3,20 +3,18 @@ package ai.koog.agents.core.agent.config
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant.Companion.fromEpochMilliseconds
+import ai.koog.utils.time.KoogClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Instant.Companion.fromEpochMilliseconds
 
 class ToolCallDescriberTest {
 
     private companion object {
         private val describer = ToolCallDescriber.JSON
 
-        private val testClock = object : Clock {
-            override fun now() = fromEpochMilliseconds(123)
-        }
+        private val testClock = KoogClock { fromEpochMilliseconds(123) }
 
         private val testToolCall = Message.Tool.Call(
             id = "test-call-id",

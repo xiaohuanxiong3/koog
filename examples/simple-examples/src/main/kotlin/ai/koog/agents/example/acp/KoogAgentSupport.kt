@@ -2,7 +2,7 @@ package ai.koog.agents.example.acp
 
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
-import ai.koog.agents.core.dsl.builder.forwardTo
+import ai.koog.agents.core.dsl.builder.node
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
@@ -36,7 +36,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.datetime.Clock
+import ai.koog.utils.time.KoogClock
 import kotlinx.serialization.json.JsonElement
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -53,7 +53,7 @@ class KoogAgentSession(
     override val sessionId: SessionId,
     private val promptExecutor: PromptExecutor,
     private val protocol: Protocol,
-    private val clock: Clock,
+    private val clock: KoogClock,
 ) : AgentSession {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -148,7 +148,7 @@ class KoogAgentSession(
  */
 class KoogAgentSupport(
     private val promptExecutor: PromptExecutor,
-    private val clock: Clock,
+    private val clock: KoogClock,
     private val protocol: Protocol,
 ) : AgentSupport {
     override suspend fun initialize(clientInfo: ClientInfo): AgentInfo {

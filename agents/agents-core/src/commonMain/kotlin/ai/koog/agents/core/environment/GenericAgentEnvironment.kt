@@ -1,11 +1,13 @@
 package ai.koog.agents.core.environment
 
-import ai.koog.agents.core.feature.model.toAgentError
 import ai.koog.agents.core.tools.Tool
 import ai.koog.agents.core.tools.ToolException
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.annotations.InternalAgentToolsApi
 import ai.koog.prompt.message.Message
+import ai.koog.serialization.JSONObject
+import ai.koog.serialization.JSONSerializer
+import ai.koog.serialization.kotlinx.toKoogJSONObject
 import io.github.oshai.kotlinlogging.KLogger
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
@@ -18,6 +20,7 @@ public class GenericAgentEnvironment(
     private val agentId: String,
     private val logger: KLogger,
     private val toolRegistry: ToolRegistry,
+    private val serializer: JSONSerializer,
 ) : AIAgentEnvironment {
 
     override suspend fun executeTool(toolCall: Message.Tool.Call): ReceivedToolResult {
@@ -49,17 +52,17 @@ public class GenericAgentEnvironment(
         val id = toolCall.id
         val toolName = toolCall.tool
         val toolArgsJson = try {
-            toolCall.contentJson
+            toolCall.contentJson.toKoogJSONObject()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             return ReceivedToolResult(
                 id = id,
                 tool = toolName,
-                toolArgs = JsonObject(emptyMap()),
+                toolArgs = JSONObject(emptyMap()),
                 toolDescription = null,
                 content = "Tool with name '$toolName' failed to parse arguments due to the error: ${e.message}",
-                resultKind = ToolResultKind.Failure(e.toAgentError()),
+                resultKind = ToolResultKind.Failure(e),
                 result = null,
             )
         }
@@ -82,7 +85,7 @@ public class GenericAgentEnvironment(
 
         // Tool Args
         val toolArgs = try {
-            tool.decodeArgs(toolArgsJson)
+            tool.decodeArgs(toolArgsJson, serializer)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -93,7 +96,7 @@ public class GenericAgentEnvironment(
                 toolArgs = toolArgsJson,
                 toolDescription = toolDescription,
                 content = "Tool with name '$toolName' failed to parse arguments due to the error: ${e.message}",
-                resultKind = ToolResultKind.Failure(e.toAgentError()),
+                resultKind = ToolResultKind.Failure(e),
                 result = null,
             )
         }
@@ -114,7 +117,7 @@ public class GenericAgentEnvironment(
                 toolArgs = toolArgsJson,
                 toolDescription = toolDescription,
                 content = e.message,
-                resultKind = ToolResultKind.ValidationError(e.toAgentError()),
+                resultKind = ToolResultKind.ValidationError(e),
                 result = null,
             )
         } catch (e: Exception) {
@@ -126,7 +129,7 @@ public class GenericAgentEnvironment(
                 toolArgs = toolArgsJson,
                 toolDescription = toolDescription,
                 content = "Tool with name '$toolName' failed to execute due to the error: ${e.message}!",
-                resultKind = ToolResultKind.Failure(e.toAgentError()),
+                resultKind = ToolResultKind.Failure(e),
                 result = null
             )
         }
@@ -134,7 +137,8 @@ public class GenericAgentEnvironment(
         logger.trace { "Completed execution of the tool '$toolName' with result: $toolResult" }
 
         val (content, result) = try {
-            tool.encodeResultToStringUnsafe(toolResult) to tool.encodeResult(toolResult)
+            tool.encodeResultToStringUnsafe(toolResult, serializer) to
+                tool.encodeResult(toolResult, serializer)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -145,7 +149,7 @@ public class GenericAgentEnvironment(
                 toolArgs = toolArgsJson,
                 toolDescription = toolDescription,
                 content = "Tool with name '$toolName' failed to serialize result due to the error: ${e.message}!",
-                resultKind = ToolResultKind.Failure(e.toAgentError()),
+                resultKind = ToolResultKind.Failure(e),
                 result = null
             )
         }

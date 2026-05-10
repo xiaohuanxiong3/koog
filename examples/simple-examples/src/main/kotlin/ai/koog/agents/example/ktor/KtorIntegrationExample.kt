@@ -2,16 +2,16 @@ package ai.koog.agents.example.ktor
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
-import ai.koog.agents.core.tools.reflect.tool
 import ai.koog.agents.ext.agent.reActStrategy
 import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
+import ai.koog.agents.features.opentelemetry.feature.OpenTelemetryConfigJvm.addSpanExporter
 import ai.koog.ktor.Koog
 import ai.koog.ktor.aiAgent
 import ai.koog.ktor.llm
 import ai.koog.ktor.mcp
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.openai.OpenAIModels
-import ai.koog.prompt.llm.OllamaModels
+import ai.koog.prompt.executor.ollama.client.OllamaModels
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.install

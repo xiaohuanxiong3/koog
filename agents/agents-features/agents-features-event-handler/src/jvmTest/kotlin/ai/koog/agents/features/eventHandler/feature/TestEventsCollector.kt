@@ -4,6 +4,9 @@ import ai.koog.agents.features.eventHandler.eventString
 import ai.koog.agents.features.eventHandler.traceString
 
 class TestEventsCollector {
+    // Checks that from each handler, we can call a suspend function.
+    // Note: this verifies that JavaAPI method (non-suspend) is not used by the compiler instead.
+    private suspend fun someSuspendFunction() {}
 
     var runId: String = ""
 
@@ -18,6 +21,7 @@ class TestEventsCollector {
     val eventHandlerFeatureConfig: EventHandlerConfig.() -> Unit = {
 
         onAgentStarting { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnAgentStarting (agent id: ${eventContext.agent.id}, run id: ${eventContext.runId})"
@@ -25,6 +29,7 @@ class TestEventsCollector {
         }
 
         onAgentCompleted { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnAgentCompleted (agent id: ${eventContext.agentId}, run id: ${eventContext.runId}, result: ${eventContext.result})"
@@ -32,19 +37,22 @@ class TestEventsCollector {
         }
 
         onAgentExecutionFailed { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
-                "OnAgentExecutionFailed (agent id: ${eventContext.agentId}, run id: ${eventContext.runId}, error: ${eventContext.throwable.message})"
+                "OnAgentExecutionFailed (agent id: ${eventContext.agentId}, run id: ${eventContext.runId}, error: ${eventContext.error.message})"
             )
         }
 
         onAgentClosing { eventContext ->
+            someSuspendFunction()
             _collectedEvents.add(
                 "OnAgentClosing (agent id: ${eventContext.agentId})"
             )
         }
 
         onStrategyStarting { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.context.runId)
             _collectedEvents.add(
                 "OnStrategyStarting (run id: ${eventContext.runId}, strategy: ${eventContext.strategy.name})"
@@ -52,6 +60,7 @@ class TestEventsCollector {
         }
 
         onStrategyCompleted { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.context.runId)
             _collectedEvents.add(
                 "OnStrategyCompleted (run id: ${eventContext.context.runId}, strategy: ${eventContext.strategy.name}, result: ${eventContext.result})"
@@ -59,6 +68,7 @@ class TestEventsCollector {
         }
 
         onNodeExecutionStarting { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.context.runId)
             _collectedEvents.add(
                 "OnNodeExecutionStarting (run id: ${eventContext.context.runId}, node: ${eventContext.node.name}, input: ${eventContext.input})"
@@ -66,6 +76,7 @@ class TestEventsCollector {
         }
 
         onNodeExecutionCompleted { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.context.runId)
             _collectedEvents.add(
                 "OnNodeExecutionCompleted (run id: ${eventContext.context.runId}, node: ${eventContext.node.name}, input: ${eventContext.input}, output: ${eventContext.output})"
@@ -73,13 +84,15 @@ class TestEventsCollector {
         }
 
         onNodeExecutionFailed { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.context.runId)
             _collectedEvents.add(
-                "OnNodeExecutionFailed (run id: ${eventContext.context.runId}, node: ${eventContext.node.name}, input: ${eventContext.input}, error: ${eventContext.throwable.message})"
+                "OnNodeExecutionFailed (run id: ${eventContext.context.runId}, node: ${eventContext.node.name}, input: ${eventContext.input}, error: ${eventContext.error.message})"
             )
         }
 
         onSubgraphExecutionStarting { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.context.runId)
             _collectedEvents.add(
                 "OnSubgraphExecutionStarting (run id: ${eventContext.context.runId}, subgraph: ${eventContext.subgraph.name}, input: ${eventContext.input})"
@@ -87,6 +100,7 @@ class TestEventsCollector {
         }
 
         onSubgraphExecutionCompleted { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.context.runId)
             _collectedEvents.add(
                 "OnSubgraphExecutionCompleted (run id: ${eventContext.context.runId}, subgraph: ${eventContext.subgraph.name}, input: ${eventContext.input}, output: ${eventContext.output})"
@@ -94,13 +108,15 @@ class TestEventsCollector {
         }
 
         onSubgraphExecutionFailed { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.context.runId)
             _collectedEvents.add(
-                "OnSubgraphExecutionFailed (run id: ${eventContext.context.runId}, subgraph: ${eventContext.subgraph.name}, input: ${eventContext.input}, error: ${eventContext.throwable.message})"
+                "OnSubgraphExecutionFailed (run id: ${eventContext.context.runId}, subgraph: ${eventContext.subgraph.name}, input: ${eventContext.input}, error: ${eventContext.error.message})"
             )
         }
 
         onLLMCallStarting { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnLLMCallStarting (run id: ${eventContext.runId}, prompt: ${eventContext.prompt.traceString}, tools: [${
@@ -112,6 +128,7 @@ class TestEventsCollector {
         }
 
         onLLMCallCompleted { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnLLMCallCompleted (run id: ${eventContext.runId}, prompt: ${eventContext.prompt.traceString}, model: ${eventContext.model.eventString}, tools: [${
@@ -123,6 +140,7 @@ class TestEventsCollector {
         }
 
         onToolCallStarting { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnToolCallStarting (run id: ${eventContext.runId}, tool: ${eventContext.toolName}, args: ${eventContext.toolArgs})"
@@ -130,6 +148,7 @@ class TestEventsCollector {
         }
 
         onToolValidationFailed { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnToolValidationFailed (run id: ${eventContext.runId}, tool: ${eventContext.toolName}, args: ${eventContext.toolArgs}, value: ${eventContext.error})"
@@ -137,13 +156,15 @@ class TestEventsCollector {
         }
 
         onToolCallFailed { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
-                "OnToolCallFailed (run id: ${eventContext.runId}, tool: ${eventContext.toolName}, args: ${eventContext.toolArgs}, throwable: ${eventContext.error?.message})"
+                "OnToolCallFailed (run id: ${eventContext.runId}, tool: ${eventContext.toolName}, args: ${eventContext.toolArgs}, error: ${eventContext.error?.message})"
             )
         }
 
         onToolCallCompleted { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnToolCallCompleted (run id: ${eventContext.runId}, tool: ${eventContext.toolName}, args: ${eventContext.toolArgs}, result: ${eventContext.toolResult})"
@@ -151,6 +172,7 @@ class TestEventsCollector {
         }
 
         onLLMStreamingStarting { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnLLMStreamingStarting (run id: ${eventContext.runId}, prompt: ${eventContext.prompt.traceString}, model: ${eventContext.model.eventString}, tools: [${
@@ -160,6 +182,7 @@ class TestEventsCollector {
         }
 
         onLLMStreamingFrameReceived { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnLLMStreamingFrameReceived (run id: ${eventContext.runId}, frame: ${eventContext.streamFrame})"
@@ -167,6 +190,7 @@ class TestEventsCollector {
         }
 
         onLLMStreamingFailed { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnLLMStreamingFailed (run id: ${eventContext.runId}, error: ${eventContext.error.message})"
@@ -174,6 +198,7 @@ class TestEventsCollector {
         }
 
         onLLMStreamingCompleted { eventContext ->
+            someSuspendFunction()
             updateRunId(eventContext.runId)
             _collectedEvents.add(
                 "OnLLMStreamingCompleted (run id: ${eventContext.runId}, prompt: ${eventContext.prompt.traceString}, model: ${eventContext.model.eventString}, tools: [${

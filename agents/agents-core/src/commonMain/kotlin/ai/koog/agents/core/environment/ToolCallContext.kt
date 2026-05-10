@@ -1,6 +1,6 @@
 package ai.koog.agents.core.environment
 
-import kotlinx.serialization.json.JsonObject
+import ai.koog.serialization.JSONObject
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -16,7 +16,7 @@ public data class ToolCallContext(
     val agentId: String,
     val toolCallId: String?,
     val toolName: String,
-    val toolArgs: JsonObject,
+    val toolArgs: JSONObject,
 ): CoroutineContext.Element {
     override val key: CoroutineContext.Key<ToolCallContext> get() = Key
 

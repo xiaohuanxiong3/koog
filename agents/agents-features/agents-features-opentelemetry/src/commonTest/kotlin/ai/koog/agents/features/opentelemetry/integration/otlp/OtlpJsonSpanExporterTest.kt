@@ -1,32 +1,38 @@
 package ai.koog.agents.features.opentelemetry.integration.otlp
 
 import io.ktor.client.HttpClient
+import io.ktor.client.engine.HttpClientEngine
+import io.ktor.client.engine.HttpClientEngineBase
+import io.ktor.client.engine.HttpClientEngineConfig
+import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestData
+import io.ktor.client.request.HttpResponseData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.InternalAPI
 import io.opentelemetry.kotlin.export.OperationResultCode
 import io.opentelemetry.kotlin.tracing.SpanKind
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 class OtlpJsonSpanExporterTest {
 
     /**
      * A Ktor [HttpClient] paired with captured request metadata and raw body bytes.
-     * The body is read inside the mock handler using the public [OutgoingContent.toByteArray]
+     * The body is read inside the mock handler using the public `OutgoingContent.toByteArray`
      * extension from `io.ktor.client.engine.mock`, avoiding post-hoc internal-type casts.
      */
     private data class CapturingClient(
@@ -65,7 +71,7 @@ class OtlpJsonSpanExporterTest {
         assertEquals(HttpMethod.Post, request.method)
         assertEquals("https://example.test/v1/traces", request.url.toString())
         assertEquals("Basic abcdef", request.headers[HttpHeaders.Authorization])
-        assertTrue(request.headers[HttpHeaders.UserAgent]?.startsWith("koog-otlp-exporter") == true)
+        assertEquals(true, request.headers[HttpHeaders.UserAgent]?.startsWith("koog-otlp-exporter"))
     }
 
     @Test
@@ -132,6 +138,45 @@ class OtlpJsonSpanExporterTest {
 
         // No HTTP traffic for an empty batch.
         assertEquals(0, mock.capturedRequests.size)
+    }
+
+    @Test
+    fun testForceFlushReturnsSuccess() = runTest {
+        val mock = mockClient()
+        val exporter = OtlpJsonSpanExporter(
+            endpoint = "https://example.test/v1/traces",
+            baseClient = mock.client,
+        )
+        assertEquals(OperationResultCode.Success, exporter.forceFlush())
+    }
+
+    @Test
+    fun testShutdownReturnsSuccess() = runTest {
+        val mock = mockClient()
+        val exporter = OtlpJsonSpanExporter(
+            endpoint = "https://example.test/v1/traces",
+            baseClient = mock.client,
+        )
+        assertEquals(OperationResultCode.Success, exporter.shutdown())
+    }
+
+    @OptIn(InternalAPI::class)
+    @Test
+    fun testShutdownReturnsFailureWhenClientCloseThrows() = runTest {
+        val throwingEngineFactory = object : HttpClientEngineFactory<HttpClientEngineConfig> {
+            override fun create(block: HttpClientEngineConfig.() -> Unit): HttpClientEngine =
+                object : HttpClientEngineBase("throwing-close") {
+                    override val config = HttpClientEngineConfig().apply(block)
+                    override val dispatcher = Dispatchers.Unconfined
+                    override suspend fun execute(data: HttpRequestData): HttpResponseData = error("not used")
+                    override fun close(): Unit = throw IllegalStateException("simulated close failure")
+                }
+        }
+        val exporter = OtlpJsonSpanExporter(
+            endpoint = "https://example.test/v1/traces",
+            baseClient = HttpClient(throwingEngineFactory),
+        )
+        assertEquals(OperationResultCode.Failure, exporter.shutdown())
     }
 
     //region Private Methods

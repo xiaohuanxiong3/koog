@@ -40,6 +40,7 @@ include(":agents:agents-utils")
 include(":integration-tests")
 
 include(":koog-agents")
+include(":koog-agents-additions")
 
 include(":prompt:prompt-cache:prompt-cache-files")
 include(":prompt:prompt-cache:prompt-cache-model")
@@ -58,6 +59,7 @@ include(":prompt:prompt-executor:prompt-executor-clients:prompt-executor-openai-
 include(":prompt:prompt-executor:prompt-executor-clients:prompt-executor-openai-client-base")
 include(":prompt:prompt-executor:prompt-executor-clients:prompt-executor-openrouter-client")
 include(":prompt:prompt-executor:prompt-executor-clients:prompt-executor-dashscope-client")
+include(":prompt:prompt-executor:prompt-executor-clients:prompt-executor-litert-client")
 
 include(":prompt:prompt-executor:prompt-executor-llms-all")
 include(":prompt:prompt-executor:prompt-executor-model")
@@ -107,3 +109,5 @@ include(":docs")
 
 include(":test-utils")
 include(":utils")
+
+include(":agents:agents-planner")

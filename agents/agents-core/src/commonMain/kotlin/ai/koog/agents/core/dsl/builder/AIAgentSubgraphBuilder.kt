@@ -4,7 +4,7 @@ package ai.koog.agents.core.dsl.builder
 
 import ai.koog.agents.core.agent.context.AIAgentContext
 import ai.koog.agents.core.agent.context.AIAgentGraphContextBase
-import ai.koog.agents.core.agent.context.getAgentContextData
+import ai.koog.agents.core.agent.context.getGraphAgentContextData
 import ai.koog.agents.core.agent.entity.AIAgentEdge
 import ai.koog.agents.core.agent.entity.AIAgentGraphStrategy
 import ai.koog.agents.core.agent.entity.AIAgentNodeBase
@@ -15,7 +15,7 @@ import ai.koog.agents.core.agent.entity.SubgraphMetadata
 import ai.koog.agents.core.agent.entity.ToolSelectionStrategy
 import ai.koog.agents.core.agent.execution.DEFAULT_AGENT_PATH_SEPARATOR
 import ai.koog.agents.core.annotation.InternalAgentsApi
-import ai.koog.agents.core.tools.Tool
+import ai.koog.agents.core.tools.ToolBase
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.params.LLMParams
 import ai.koog.prompt.processor.ResponseProcessor
@@ -447,7 +447,7 @@ public fun <Input : Any, Output : Any> subgraph(
  */
 public inline fun <reified Input, reified Output> subgraph(
     name: String? = null,
-    tools: List<Tool<*, *>>,
+    tools: List<ToolBase<*, *>>,
     llmModel: LLModel? = null,
     llmParams: LLMParams? = null,
     responseProcessor: ResponseProcessor? = null,
@@ -490,9 +490,9 @@ public fun <Input, Output> parallel(
                         val nodeContext = initialContext.fork()
                         val nodeOutput = node.execute(nodeContext, input)
 
-                        if (nodeOutput == null && nodeContext.getAgentContextData() != null) {
+                        if (nodeOutput == null && nodeContext.getGraphAgentContextData() != null) {
                             throw IllegalStateException(
-                                "Checkpoints are not supported in parallel execution. Node: ${node.name}, Context: ${nodeContext.getAgentContextData()}"
+                                "Checkpoints are not supported in parallel execution. Node: ${node.name}, Context: ${nodeContext.getGraphAgentContextData()}"
                             )
                         }
 

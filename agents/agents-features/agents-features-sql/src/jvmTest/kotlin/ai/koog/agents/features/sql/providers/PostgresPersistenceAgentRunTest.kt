@@ -16,6 +16,7 @@ import ai.koog.agents.testing.tools.getMockExecutor
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.ollama.client.OllamaModels
 import ai.koog.prompt.message.Message
+import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.serialization.JSONPrimitive
@@ -110,7 +111,7 @@ class PostgresPersistenceAgentRunTest {
         name: String? = null,
     ): AIAgentNodeDelegate<String, String> = node(name) {
         return@node llm.readSession {
-            val history = this.prompt.messages.joinToString("\n") { it.content }
+            val history = this.prompt.messages.joinToString("\n") { msg -> msg.parts.filterIsInstance<MessagePart.Text>().joinToString("\n") { it.text } }
             return@readSession "History: $history"
         }
     }
@@ -155,7 +156,7 @@ class PostgresPersistenceAgentRunTest {
 
         val cp1 = createTestCheckpoint("cp-1", time = time, version = 0, nodePath = path(agentId, "straight-forward", "Node2"))
         val cp2 = createTestCheckpoint("cp-2", version = cp1.version + 1, time = time, nodePath = path(agentId, "straight-forward", "Node2"))
-        val tomb = tombstoneCheckpoint(time = KoogClock.System.now(), version = cp2.version + 1)
+        val tomb = tombstoneCheckpoint(createdAt = KoogClock.System.now(), version = cp2.version + 1)
 
         // Save in order: cp1 -> cp2 -> tombstone
         provider.saveCheckpoint(agentId, cp1)
@@ -198,7 +199,7 @@ class PostgresPersistenceAgentRunTest {
 
         val cp1 = createTestCheckpoint("cp-1", version = 0, time = time, nodePath = path(agentId, stratName, "Node2"))
         val cp2 = createTestCheckpoint("cp-2", version = cp1.version + 1, time = time, nodePath = path(agentId, stratName, "Node2"))
-        val tomb = tombstoneCheckpoint(time = KoogClock.System.now(), version = cp2.version + 1)
+        val tomb = tombstoneCheckpoint(createdAt = KoogClock.System.now(), version = cp2.version + 1)
         val cp3 = createTestCheckpoint("cp-3", version = tomb.version + 1, time = time, nodePath = path(agentId, stratName, "Node1"))
 
         // Save in order: cp1 -> cp2 -> tombstone -> cp3

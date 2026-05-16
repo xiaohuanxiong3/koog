@@ -3,6 +3,7 @@ package ai.koog.agents.features.tracing.feature
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.agent.entity.AIAgentGraphStrategy
 import ai.koog.agents.core.agent.entity.AIAgentStorageKey
+import ai.koog.agents.core.agent.entity.createStorageKey
 import ai.koog.agents.core.annotation.InternalAgentsApi
 import ai.koog.agents.core.feature.AIAgentGraphFeature
 import ai.koog.agents.core.feature.message.FeatureMessage
@@ -102,7 +103,7 @@ public class Tracing {
         private val logger = KotlinLogging.logger { }
 
         override val key: AIAgentStorageKey<Tracing> =
-            AIAgentStorageKey("agents-features-tracing")
+            createStorageKey<Tracing>("agents-features-tracing")
 
         override fun createInitialConfig(
             agentConfig: AIAgentConfig,
@@ -139,7 +140,7 @@ public class Tracing {
                 val event = AgentCompletedEvent(
                     eventId = eventContext.eventId,
                     executionInfo = eventContext.executionInfo,
-                    agentId = eventContext.agentId,
+                    agentId = eventContext.agent.id,
                     runId = eventContext.runId,
                     result = eventContext.result?.toString(),
                     timestamp = pipeline.clock.now().toEpochMilliseconds()
@@ -151,7 +152,7 @@ public class Tracing {
                 val event = AgentExecutionFailedEvent(
                     eventId = eventContext.eventId,
                     executionInfo = eventContext.executionInfo,
-                    agentId = eventContext.agentId,
+                    agentId = eventContext.agent.id,
                     runId = eventContext.runId,
                     error = eventContext.error.toAgentError(),
                     timestamp = pipeline.clock.now().toEpochMilliseconds()
@@ -163,7 +164,7 @@ public class Tracing {
                 val event = AgentClosingEvent(
                     eventId = eventContext.eventId,
                     executionInfo = eventContext.executionInfo,
-                    agentId = eventContext.agentId,
+                    agentId = eventContext.agent.id,
                     timestamp = pipeline.clock.now().toEpochMilliseconds()
                 )
                 processMessage(config, event)
@@ -340,7 +341,7 @@ public class Tracing {
                     runId = eventContext.runId,
                     prompt = eventContext.prompt,
                     model = eventContext.model.toModelInfo(),
-                    responses = eventContext.responses,
+                    response = eventContext.response,
                     moderationResponse = eventContext.moderationResponse,
                     timestamp = pipeline.clock.now().toEpochMilliseconds()
                 )

@@ -1,7 +1,5 @@
 import ai.koog.gradle.publish.maven.Publishing.publishToMaven
 
-group = rootProject.group
-version = rootProject.version
 
 plugins {
     id("ai.kotlin.multiplatform")
@@ -17,6 +15,7 @@ kotlin {
                 api(libs.kotlinx.coroutines.core)
                 api(libs.kotlinx.serialization.json)
                 api(libs.kotlinx.io.core)
+                implementation(libs.oshai.kotlin.logging)
             }
         }
 
@@ -42,9 +41,5 @@ kotlin {
 
     explicitApi()
 }
-
-// dependencies {
-//    testImplementation(project(":prompt:prompt-markdown"))
-// }
 
 publishToMaven()

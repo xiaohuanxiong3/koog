@@ -25,6 +25,7 @@ kotlin {
         jvmTest {
             dependencies {
                 implementation(project(":agents:agents-ext"))
+                implementation(project(":agents:agents-planner"))
                 implementation(project(":agents:agents-features:agents-features-event-handler"))
                 implementation(project(":agents:agents-features:agents-features-trace"))
                 implementation(project(":agents:agents-features:agents-features-snapshot"))
@@ -46,6 +47,7 @@ kotlin {
                 )
                 implementation(project(":agents:agents-features:agents-features-chat-history-aws"))
                 implementation(project(":agents:agents-features:agents-features-longterm-memory-aws"))
+                implementation(project(":serialization:serialization-jackson"))
 
                 // External libraries
                 implementation(libs.junit.jupiter.params)

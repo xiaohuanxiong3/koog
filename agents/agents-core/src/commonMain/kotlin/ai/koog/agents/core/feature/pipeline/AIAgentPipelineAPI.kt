@@ -1,9 +1,6 @@
-@file:Suppress("MissingKDocForPublicAPI")
-
 package ai.koog.agents.core.feature.pipeline
 
 import ai.koog.agents.core.agent.AIAgent
-import ai.koog.agents.core.agent.GraphAIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.agent.context.AIAgentContext
 import ai.koog.agents.core.agent.entity.AIAgentStorageKey
@@ -31,6 +28,7 @@ import ai.koog.agents.core.feature.handler.tool.ToolCallCompletedContext
 import ai.koog.agents.core.feature.handler.tool.ToolCallFailedContext
 import ai.koog.agents.core.feature.handler.tool.ToolCallStartingContext
 import ai.koog.agents.core.feature.handler.tool.ToolValidationFailedContext
+import ai.koog.agents.core.tools.ToolCallMetadata
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.prompt.dsl.ModerationResult
 import ai.koog.prompt.dsl.Prompt
@@ -71,43 +69,43 @@ public interface AIAgentPipelineAPI {
     public suspend fun <TInput, TOutput> onAgentStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        runId: String,
         agent: AIAgent<*, *>,
-        context: AIAgentContext
+        context: AIAgentContext,
+        runId: String,
     )
 
     @InternalAgentsApi
     public suspend fun onAgentCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        agentId: String,
+        agent: AIAgent<*, *>,
+        context: AIAgentContext,
         runId: String,
         result: Any?,
-        context: AIAgentContext
     )
 
     @InternalAgentsApi
     public suspend fun onAgentExecutionFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        agentId: String,
+        agent: AIAgent<*, *>,
+        context: AIAgentContext,
         runId: String,
         error: Throwable,
-        context: AIAgentContext
     )
 
     @InternalAgentsApi
     public suspend fun onAgentClosing(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        agentId: String
+        agent: AIAgent<*, *>,
     )
 
     @InternalAgentsApi
     public suspend fun onAgentEnvironmentTransforming(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        agent: GraphAIAgent<*, *>,
+        agent: AIAgent<*, *>,
         baseEnvironment: AIAgentEnvironment
     ): AIAgentEnvironment
 
@@ -119,16 +117,16 @@ public interface AIAgentPipelineAPI {
     public suspend fun onStrategyStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         strategy: AIAgentStrategy<*, *, *>,
-        context: AIAgentContext
     )
 
     @InternalAgentsApi
     public suspend fun onStrategyCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
-        strategy: AIAgentStrategy<*, *, *>,
         context: AIAgentContext,
+        strategy: AIAgentStrategy<*, *, *>,
         result: Any?,
         resultType: TypeToken
     )
@@ -141,34 +139,34 @@ public interface AIAgentPipelineAPI {
     public suspend fun onLLMCallStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         runId: String,
         prompt: Prompt,
         model: LLModel,
         tools: List<ToolDescriptor>,
-        context: AIAgentContext
     )
 
     @InternalAgentsApi
     public suspend fun onLLMCallCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         runId: String,
         prompt: Prompt,
         model: LLModel,
         tools: List<ToolDescriptor>,
-        responses: List<Message.Response>,
+        response: Message.Assistant?,
         moderationResponse: ModerationResult? = null,
-        context: AIAgentContext
     )
 
     public suspend fun onLLMCallFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         runId: String,
         prompt: Prompt,
         model: LLModel,
         tools: List<ToolDescriptor>,
-        context: AIAgentContext,
         error: Throwable,
     )
 
@@ -180,18 +178,19 @@ public interface AIAgentPipelineAPI {
     public suspend fun onToolCallStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         runId: String,
         toolCallId: String?,
         toolName: String,
         toolDescription: String?,
         toolArgs: JSONObject,
-        context: AIAgentContext
     )
 
     @InternalAgentsApi
     public suspend fun onToolValidationFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         runId: String,
         toolCallId: String?,
         toolName: String,
@@ -199,13 +198,13 @@ public interface AIAgentPipelineAPI {
         toolArgs: JSONObject,
         message: String,
         error: Throwable,
-        context: AIAgentContext
     )
 
     @InternalAgentsApi
     public suspend fun onToolCallFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         runId: String,
         toolCallId: String?,
         toolName: String,
@@ -213,11 +212,31 @@ public interface AIAgentPipelineAPI {
         toolArgs: JSONObject,
         message: String,
         error: Throwable?,
-        context: AIAgentContext
     )
 
     @InternalAgentsApi
     public suspend fun onToolCallCompleted(
+        eventId: String,
+        executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
+        runId: String,
+        toolCallId: String?,
+        toolName: String,
+        toolDescription: String?,
+        toolArgs: JSONObject,
+        toolResult: JSONElement?,
+    )
+
+    /**
+     * Collects metadata contributions from every feature that registered a handler via
+     * [provideToolCallMetadata] and returns the combined map.
+     *
+     * Contributions are merged in feature installation order; later contributions overwrite earlier
+     * ones on key collision. The caller of [ai.koog.agents.core.environment.AIAgentEnvironment.executeTool]
+     * is responsible for choosing a precedence when mixing this result with caller-supplied metadata.
+     */
+    @InternalAgentsApi
+    public suspend fun collectToolCallMetadata(
         eventId: String,
         executionInfo: AgentExecutionInfo,
         runId: String,
@@ -225,9 +244,8 @@ public interface AIAgentPipelineAPI {
         toolName: String,
         toolDescription: String?,
         toolArgs: JSONObject,
-        toolResult: JSONElement?,
         context: AIAgentContext
-    )
+    ): ToolCallMetadata
 
     //endregion Trigger Tool Handlers
 
@@ -237,44 +255,44 @@ public interface AIAgentPipelineAPI {
     public suspend fun onLLMStreamingStarting(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         runId: String,
         prompt: Prompt,
         model: LLModel,
         tools: List<ToolDescriptor>,
-        context: AIAgentContext
     )
 
     @InternalAgentsApi
     public suspend fun onLLMStreamingFrameReceived(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         runId: String,
         prompt: Prompt,
         model: LLModel,
         streamFrame: StreamFrame,
-        context: AIAgentContext
     )
 
     @InternalAgentsApi
     public suspend fun onLLMStreamingFailed(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         runId: String,
         prompt: Prompt,
         model: LLModel,
         error: Throwable,
-        context: AIAgentContext
     )
 
     @InternalAgentsApi
     public suspend fun onLLMStreamingCompleted(
         eventId: String,
         executionInfo: AgentExecutionInfo,
+        context: AIAgentContext,
         runId: String,
         prompt: Prompt,
         model: LLModel,
         tools: List<ToolDescriptor>,
-        context: AIAgentContext
     )
 
     //endregion Trigger Streaming Handlers
@@ -351,6 +369,24 @@ public interface AIAgentPipelineAPI {
     public fun interceptToolCallStarting(
         feature: AIAgentFeature<*, *>,
         handle: suspend (eventContext: ToolCallStartingContext) -> Unit
+    )
+
+    /**
+     * Registers a handler that contributes metadata for every tool call.
+     *
+     * The handler fires before the tool executes, receives the same [ToolCallStartingContext] used by
+     * [interceptToolCallStarting], and returns a `Map<String, Any?>` of values to merge into the
+     * metadata threaded into [ai.koog.agents.core.tools.Tool.execute].
+     *
+     * Use this to attach cross-cutting per-call context (trace span id, correlation id, feature flags)
+     * without expanding the tool's argument schema. Return an empty map to contribute nothing.
+     *
+     * Merge precedence (documented in [ai.koog.agents.core.environment.ContextualAgentEnvironment]):
+     * caller-supplied metadata wins over feature contributions on key collision.
+     */
+    public fun provideToolCallMetadata(
+        feature: AIAgentFeature<*, *>,
+        handle: suspend (eventContext: ToolCallStartingContext) -> Map<String, Any?>
     )
 
     public fun interceptToolValidationFailed(

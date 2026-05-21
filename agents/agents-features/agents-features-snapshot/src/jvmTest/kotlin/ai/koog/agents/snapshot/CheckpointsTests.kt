@@ -16,10 +16,8 @@ import ai.koog.agents.core.dsl.builder.AIAgentNodeDelegate
 import ai.koog.agents.core.dsl.builder.node
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.ToolCalls
-import ai.koog.agents.core.dsl.extension.asUserMessage
 import ai.koog.agents.core.dsl.extension.nodeDoNothing
 import ai.koog.agents.core.dsl.extension.nodeExecuteTools
-import ai.koog.agents.core.dsl.extension.nodeExecuteToolsAndGetResults
 import ai.koog.agents.core.dsl.extension.nodeLLMRequest
 import ai.koog.agents.core.dsl.extension.nodeLLMSendToolResults
 import ai.koog.agents.core.dsl.extension.onTextMessage
@@ -50,6 +48,7 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
+import ai.koog.prompt.params.LLMParams
 import ai.koog.serialization.JSONPrimitive
 import ai.koog.serialization.kotlinx.KotlinxSerializer
 import ai.koog.serialization.kotlinx.toKoogJSONElement
@@ -109,15 +108,14 @@ class CheckpointsTests {
                     it
                 }
 
-                @Suppress("DEPRECATION")
                 val checkpoint by node<String, String> { input ->
                     println("checkpoint save")
                     withPersistence { ctx ->
-                        createCheckpoint(
+                        createCheckpointAfterNode(
                             agentContext = ctx,
                             nodePath = ctx.executionInfo.path(),
-                            lastInput = input,
-                            lastInputType = typeToken<String>(),
+                            lastOutput = input,
+                            lastOutputType = typeToken<String>(),
                             checkpointId = "cpt-100500",
                             version = 0
                         )
@@ -189,8 +187,8 @@ class CheckpointsTests {
     data class WriteArgs(val key: String, val value: String)
 
     object WriteKVTool : Tool<WriteArgs, String>(
-        argsSerializer = WriteArgs.serializer(),
-        resultSerializer = String.serializer(),
+        argsType = typeToken<WriteArgs>(),
+        resultType = typeToken<String>(),
         name = "write_kv",
         description = "Writes a key-value pair (simulated)"
     ) {
@@ -201,8 +199,8 @@ class CheckpointsTests {
     }
 
     object DeleteKVTool : Tool<WriteArgs, String>(
-        argsSerializer = WriteArgs.serializer(),
-        resultSerializer = String.serializer(),
+        argsType = typeToken<WriteArgs>(),
+        resultType = typeToken<String>(),
         name = "delete_kv",
         description = "Deletes a key-value pair (rollback)"
     ) {
@@ -259,15 +257,15 @@ class CheckpointsTests {
             // Node that creates a checkpoint
             val saveCheckpoint by node<String, Unit> { input ->
                 withPersistence { ctx ->
-                    createCheckpoint(
+                    llm.writeSession { appendPrompt { user { text("Checkpoint created with ID: $checkpointId") } } }
+                    createCheckpointAfterNode(
                         ctx,
                         ctx.executionInfo.path(),
-                        input,
-                        typeToken<String>(),
+                        Unit,
+                        typeToken<Unit>(),
                         checkpointId = checkpointId,
                         version = 0
                     )
-                    llm.writeSession { appendPrompt { user { text("Checkpoint created with ID: $checkpointId") } } }
                 }
             }
 
@@ -402,18 +400,23 @@ class CheckpointsTests {
         val time = KoogClock.System.now()
         val convId = "testAgentId"
 
+        // Checkpoint represents "Node2 has completed with the given lastOutput".
+        // The messageHistory must already include Node2's contribution since we won't re-execute it.
         val testCheckpoint = AgentCheckpointData(
             checkpointId = "testCheckpointId",
             createdAt = time,
             messageHistory = listOf(
                 Message.User("User message", metaInfo = RequestMetaInfo(time)),
-                Message.Assistant("Assistant message", metaInfo = ResponseMetaInfo(time))
+                Message.Assistant("Assistant message", metaInfo = ResponseMetaInfo(time)),
+                Message.User("Node 2 output", metaInfo = RequestMetaInfo(time))
             ),
             version = 0,
             graphProperties = GraphCheckpointProperties(
                 nodePath = path(convId, "straight-forward", "Node2"),
-                lastInput = JSONPrimitive("Test input")
-            )
+                lastOutput = JSONPrimitive("Node 2 output")
+            ),
+            plannerProperties = null,
+            properties = null,
         )
 
         checkpointStorageProvider.saveCheckpoint(convId, testCheckpoint)
@@ -450,13 +453,16 @@ class CheckpointsTests {
             createdAt = time,
             messageHistory = listOf(
                 Message.User("User message", metaInfo = RequestMetaInfo(time)),
-                Message.Assistant("Assistant message", metaInfo = ResponseMetaInfo(time))
+                Message.Assistant("Assistant message", metaInfo = ResponseMetaInfo(time)),
+                Message.User("Node 1 output", metaInfo = RequestMetaInfo(time))
             ),
             version = 0,
             graphProperties = GraphCheckpointProperties(
                 nodePath = path(sessionId, "straight-forward", "Node1"),
-                lastInput = JSONPrimitive("Test input")
-            )
+                lastOutput = JSONPrimitive("Node 1 output")
+            ),
+            plannerProperties = null,
+            properties = null,
         )
 
         val testCheckpoint = AgentCheckpointData(
@@ -464,13 +470,16 @@ class CheckpointsTests {
             createdAt = time,
             messageHistory = listOf(
                 Message.User("User message", metaInfo = RequestMetaInfo(time)),
-                Message.Assistant("Assistant message", metaInfo = ResponseMetaInfo(time))
+                Message.Assistant("Assistant message", metaInfo = ResponseMetaInfo(time)),
+                Message.User("Node 2 output", metaInfo = RequestMetaInfo(time))
             ),
             version = testCheckpoint2.version + 1,
             graphProperties = GraphCheckpointProperties(
                 nodePath = path(sessionId, "straight-forward", "Node2"),
-                lastInput = JSONPrimitive("Test input")
-            )
+                lastOutput = JSONPrimitive("Node 2 output")
+            ),
+            plannerProperties = null,
+            properties = null,
         )
 
         checkpointStorageProvider.saveCheckpoint(sessionId, testCheckpoint2)
@@ -584,7 +593,7 @@ class CheckpointsTests {
     }
 
     class AskCLIQuestion(val cli: CLI) : SimpleTool<AskCLIQuestion.Args>(
-        Args.serializer(),
+        typeToken<Args>(),
         "ask",
         "prints line in CLI and reads user's response"
     ) {
@@ -648,12 +657,12 @@ class CheckpointsTests {
             },
             strategy = strategy("simple-with-interrupt") {
                 val callLLM by nodeLLMRequest()
-                val executeTool by nodeExecuteToolsAndGetResults()
+                val executeTool by nodeExecuteTools()
                 val sendToolResult by nodeLLMSendToolResults()
 
                 val nodeThrow by node<Any?, String> { throw Exception("TERMINATED AFTER THIRD TOOL CALL") }
 
-                edge(nodeStart forwardTo callLLM asUserMessage { it })
+                edge(nodeStart forwardTo callLLM)
                 edge(callLLM forwardTo executeTool onToolCalls { true })
                 edge(callLLM forwardTo nodeFinish onTextMessage { true })
                 edge(executeTool forwardTo sendToolResult onCondition { !agentInterrupted() })
@@ -771,10 +780,11 @@ class CheckpointsTests {
     }
 
     @Test
-    fun testStorageIsSavedInCheckpoint() = runTest {
+    fun testContextDataIsSavedInCheckpoint() = runTest {
         val storageKey = createStorageKey<String>("test-value")
         val checkpointProvider = InMemoryPersistenceStorageProvider()
         val sessionId = "storage-checkpoint-session"
+        val expectedLlmParams = LLMParams(temperature = 0.42)
 
         val agent = AIAgent(
             promptExecutor = getMockExecutor(serializer) { },
@@ -800,7 +810,13 @@ class CheckpointsTests {
 
                 nodeStart then writeNode then checkpointNode then nodeFinish
             },
-            agentConfig = agentConfig,
+            agentConfig = AIAgentConfig(
+                prompt = prompt("test") {
+                    system(systemPrompt)
+                }.copy(params = expectedLlmParams),
+                model = OllamaModels.Meta.LLAMA_3_2,
+                maxAgentIterations = 20
+            ),
             toolRegistry = toolRegistry
         ) {
             install(Persistence) {
@@ -812,15 +828,24 @@ class CheckpointsTests {
 
         // get second to last checkpoint because the latest checkpoint is a tombstone checkpoint that doesn't have storage and message history
         val checkpoint = checkpointProvider.getCheckpoints(sessionId).let { it[it.lastIndex - 1] }
+
+        // Verify storage is saved
         val restoredStorage = AIAgentStorage(serializer)
         restoredStorage.putAllSerialized(checkpoint.storage?.entries ?: emptyMap())
         assertEquals("persisted-value", restoredStorage.get(storageKey))
+
+        // Verify LLM model, params, tools, and iteration count are saved
+        assertEquals(OllamaModels.Meta.LLAMA_3_2, checkpoint.llmModel)
+        assertEquals(expectedLlmParams, checkpoint.llmParams)
+        assertEquals(listOf(SayToUser.name), checkpoint.tools)
+        assertEquals(3, checkpoint.agentIterations)
     }
 
     /**
      * The idea of this test is to evaluate the following situation:
      * 1. some checkpoint has been saved by an older version of a Koog agent (before 0.6.1) and is ALREADY saved to the persistence storage (ex: datab)
      * */
+    @org.junit.jupiter.api.Disabled("Tests removed `lastInput` re-execution semantics; lastInput was removed alongside the deprecated APIs.")
     @Test
     fun testLastSuccessfulNodeExecutedTwiceInCompatibilityModeWithOlderCheckpointVersions() = runTest {
         val cli = CLI { systemMessage ->
@@ -863,12 +888,12 @@ class CheckpointsTests {
             },
             strategy = strategy("simple-with-interrupt") {
                 val callLLM by nodeLLMRequest()
-                val executeTool by nodeExecuteToolsAndGetResults()
+                val executeTool by nodeExecuteTools()
                 val sendToolResult by nodeLLMSendToolResults()
 
                 val nodeThrow by node<Any?, String> { throw Exception("TERMINATED AFTER THIRD TOOL CALL") }
 
-                edge(nodeStart forwardTo callLLM asUserMessage { it })
+                edge(nodeStart forwardTo callLLM)
                 edge(callLLM forwardTo executeTool onToolCalls { true })
                 edge(callLLM forwardTo nodeFinish onTextMessage { true })
                 edge(executeTool forwardTo sendToolResult onCondition { !agentInterrupted() })
@@ -963,7 +988,7 @@ class CheckpointsTests {
                     // (output of the `onToolCalls { … }` edge transform), not a bare Assistant
                     // message. Store the value in that shape so the agent's resume path can
                     // deserialize it back into the executeTool node's input type.
-                    lastInput = Json.encodeToJsonElement(
+                    lastOutput = Json.encodeToJsonElement(
                         ToolCalls(
                             toolCalls = listOf(
                                 MessagePart.Tool.Call(

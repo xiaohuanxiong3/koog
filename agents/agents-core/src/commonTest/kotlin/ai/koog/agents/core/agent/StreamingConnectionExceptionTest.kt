@@ -2,14 +2,13 @@ package ai.koog.agents.core.agent
 
 import ai.koog.agents.core.dsl.builder.node
 import ai.koog.agents.core.dsl.builder.strategy
-import ai.koog.agents.core.dsl.extension.asUserMessage
 import ai.koog.agents.core.dsl.extension.nodeLLMRequestStreaming
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.features.eventHandler.feature.EventHandler
 import ai.koog.agents.testing.tools.getMockExecutor
+import ai.koog.prompt.Prompt
 import ai.koog.prompt.dsl.ModerationResult
-import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.executor.clients.LLMClientException
 import ai.koog.prompt.executor.clients.openai.OpenAIModels
 import ai.koog.prompt.executor.model.PromptExecutor
@@ -338,7 +337,7 @@ class StreamingConnectionExceptionTest {
                 stream.collectText()
             }
 
-            edge(nodeStart forwardTo streamNode asUserMessage { it })
+            edge(nodeStart forwardTo streamNode)
             edge(streamNode forwardTo collectNode)
             edge(collectNode forwardTo nodeFinish)
         }

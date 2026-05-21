@@ -2,7 +2,7 @@ package ai.koog.prompt.executor.llms.all
 
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.http.client.ktor.KtorKoogHttpClient
-import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.Prompt
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
 import ai.koog.prompt.executor.clients.google.GoogleLLMClient
@@ -143,7 +143,7 @@ class MultipleLLMPromptExecutorMockTest {
             user("What is the capital of France?")
         }
 
-        val response = executor.execute(prompt = prompt, model = GoogleModels.Gemini2_0Flash)
+        val response = executor.execute(prompt = prompt, model = GoogleModels.Gemini2_5Flash)
         val textContent = assertIs<MessagePart.Text>(response.parts.first())
 
         assertEquals(
@@ -198,7 +198,7 @@ class MultipleLLMPromptExecutorMockTest {
             user("What is the capital of France?")
         }
 
-        val responseChunks = executor.executeStreaming(prompt, GoogleModels.Gemini2_0Flash)
+        val responseChunks = executor.executeStreaming(prompt, GoogleModels.Gemini2_5Flash)
             .filterTextOnly()
             .toList()
 

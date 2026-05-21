@@ -18,7 +18,7 @@ import ai.koog.agents.snapshot.providers.file.JVMFilePersistenceStorageProvider;
 import ai.koog.integration.tests.base.KoogJavaTestBase;
 import ai.koog.integration.tests.utils.*;
 import ai.koog.integration.tests.utils.annotations.Retry;
-import ai.koog.prompt.dsl.Prompt;
+import ai.koog.prompt.Prompt;
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient;
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels;
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient;
@@ -45,7 +45,6 @@ import static ai.koog.prompt.executor.clients.openai.OpenAIClientFactory.openAIC
 
 import java.io.InputStream;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
@@ -318,7 +317,11 @@ public class JavaAIAgentIntegrationTest extends KoogJavaTestBase {
                 context.requestLLMWithoutTools("Acknowledge the context in one short sentence.");
                 context.compressHistory(strategy, true);
                 compressionsApplied.incrementAndGet();
-                historyAfterCompression.set(new ArrayList<>(context.getHistory()));
+                historyAfterCompression.set(
+                    context
+                        .getLlm()
+                        .readSession(it -> it.getPrompt().getMessages())
+                );
                 return assistantText(context.requestLLMWithoutTools("Who am I according to instructions? Reply shortly."));
             })
             .install(EventHandler.Feature, config ->
@@ -374,7 +377,11 @@ public class JavaAIAgentIntegrationTest extends KoogJavaTestBase {
 
                 context.compressHistory(HistoryCompressionStrategy.FromLastNMessages(2), true);
                 afterCompressCalls.incrementAndGet();
-                historyAfterCompression.set(new ArrayList<>(context.getHistory()));
+                historyAfterCompression.set(
+                    context
+                        .getLlm()
+                        .readSession(it -> it.getPrompt().getMessages())
+                );
 
                 return assistantText(afterToolResult);
             })

@@ -4,7 +4,6 @@ import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.agent.entity.ToolSelectionStrategy
 import ai.koog.agents.core.dsl.builder.strategy
-import ai.koog.agents.core.dsl.extension.asUserMessage
 import ai.koog.agents.core.dsl.extension.nodeLLMRequestStreaming
 import ai.koog.agents.core.dsl.extension.nodeLLMRequestWithoutTools
 import ai.koog.agents.core.tools.ToolDescriptor
@@ -14,7 +13,7 @@ import ai.koog.agents.longtermmemory.model.MemoryRecord
 import ai.koog.agents.longtermmemory.retrieval.search.SearchStrategy
 import ai.koog.agents.longtermmemory.retrieval.search.SimilaritySearchStrategy
 import ai.koog.agents.longtermmemory.storage.InMemoryRecordStorage
-import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.Prompt
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.executor.ollama.client.OllamaModels
@@ -56,14 +55,14 @@ class LongTermMemoryRetrievalTest {
     private val nonStreamingStrategy =
         strategy<String, String>("retrieval-test", toolSelectionStrategy = ToolSelectionStrategy.NONE) {
             val llmNode by nodeLLMRequestWithoutTools(name = "llm-node")
-            edge(nodeStart forwardTo llmNode asUserMessage { it })
+            edge(nodeStart forwardTo llmNode)
             edge(llmNode forwardTo nodeFinish transformed { it.parts.filterIsInstance<MessagePart.Text>().joinToString("\n") { p -> p.text } })
         }
 
     private val streamingStrategy =
         strategy<String, String>("retrieval-streaming-test", toolSelectionStrategy = ToolSelectionStrategy.NONE) {
             val llmNode by nodeLLMRequestStreaming(name = "llm-node")
-            edge(nodeStart forwardTo llmNode asUserMessage { it })
+            edge(nodeStart forwardTo llmNode)
             edge(
                 llmNode forwardTo nodeFinish transformed { flow ->
                     flow.toList().filterIsInstance<StreamFrame.TextDelta>().joinToString("") { it.text }

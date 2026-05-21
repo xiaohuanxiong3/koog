@@ -1,6 +1,6 @@
 package ai.koog.prompt.executor.llms
 
-import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.Prompt
 import ai.koog.prompt.executor.clients.LLMClient
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
 import ai.koog.prompt.executor.clients.google.GoogleModels
@@ -298,7 +298,7 @@ class RoutingLLMPromptExecutorTest {
             MockLLMClient(provider = LLMProvider.Anthropic, models = listOf(AnthropicModels.Sonnet_4)),
             MockLLMClient(
                 provider = LLMProvider.Google,
-                models = listOf(GoogleModels.Gemini2_0Flash, GoogleModels.Gemini2_5Pro)
+                models = listOf(GoogleModels.Gemini2_5Flash, GoogleModels.Gemini2_5Pro)
             )
         )
 

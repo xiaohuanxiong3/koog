@@ -16,8 +16,7 @@ import ai.koog.agents.core.dsl.extension.Concept
 import ai.koog.agents.core.dsl.extension.FactType
 import ai.koog.agents.core.dsl.extension.HistoryCompressionStrategy
 import ai.koog.agents.core.dsl.extension.ReceivedToolResults
-import ai.koog.agents.core.dsl.extension.asUserMessage
-import ai.koog.agents.core.dsl.extension.nodeExecuteToolsAndGetResults
+import ai.koog.agents.core.dsl.extension.nodeExecuteTools
 import ai.koog.agents.core.dsl.extension.nodeLLMCompressHistory
 import ai.koog.agents.core.dsl.extension.nodeLLMRequest
 import ai.koog.agents.core.dsl.extension.nodeLLMRequestWithoutTools
@@ -29,7 +28,9 @@ import ai.koog.agents.ext.agent.reActStrategy
 import ai.koog.agents.features.eventHandler.feature.EventHandler
 import ai.koog.agents.features.eventHandler.feature.EventHandlerConfig
 import ai.koog.agents.snapshot.feature.AgentCheckpointData
+import ai.koog.agents.snapshot.feature.GraphCheckpointProperties
 import ai.koog.agents.snapshot.feature.Persistence
+import ai.koog.agents.snapshot.feature.isTombstone
 import ai.koog.agents.snapshot.feature.withPersistence
 import ai.koog.agents.snapshot.providers.InMemoryPersistenceStorageProvider
 import ai.koog.agents.snapshot.providers.file.JVMFilePersistenceStorageProvider
@@ -226,7 +227,7 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
         compressBeforeToolResult: Boolean,
     ) = strategy<String, Pair<String, List<Message>>>("history-compression-with-tools-test") {
         val callLLM by nodeLLMRequest(name = "callLLM")
-        val executeTool by nodeExecuteToolsAndGetResults("execute_tool")
+        val executeTool by nodeExecuteTools("execute_tool")
         val compressResponse by nodeLLMCompressHistory<Message.Assistant>(
             name = "compress_history",
             strategy = strategy
@@ -237,7 +238,7 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
         )
         val sendToolResult by nodeLLMSendToolResults("send_tool_result")
 
-        edge(nodeStart forwardTo callLLM asUserMessage { it })
+        edge(nodeStart forwardTo callLLM)
         if (compressBeforeToolResult) {
             edge(callLLM forwardTo executeTool onToolCalls { true })
             executeTool then compressToolResult then sendToolResult
@@ -464,7 +465,7 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
 
         val customStrategy = strategy("test-without-tools") {
             val callLLM by nodeLLMRequestWithoutTools(name = "callLLM")
-            edge(nodeStart forwardTo callLLM asUserMessage { it })
+            edge(nodeStart forwardTo callLLM)
             edge(callLLM forwardTo nodeFinish onTextMessage { true })
         }
 
@@ -601,7 +602,7 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
                     val parent = getLatestCheckpoint(agentContext.agentId)
                     createCheckpointAfterNode(
                         agentContext = agentContext,
-                        nodePath = save,
+                        nodePath = agentContext.executionInfo.path(),
                         lastOutput = input,
                         lastOutputType = typeToken<String>(),
                         version = parent?.version?.plus(1) ?: 0
@@ -643,7 +644,7 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
 
         with(checkpointStorageProvider.getCheckpoints(agent.id)) {
             shouldNotBeEmpty()
-            first().nodePath shouldContain save
+            first().graphProperties?.nodePath shouldContain save
         }
 
         val restoredAgent = AIAgent(
@@ -710,7 +711,7 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
                     val parent = getLatestCheckpoint(agentContext.agentId)
                     createCheckpointAfterNode(
                         agentContext = agentContext,
-                        nodePath = save,
+                        nodePath = agentContext.executionInfo.path(),
                         lastOutput = input,
                         lastOutputType = typeToken<String>(),
                         version = parent?.version?.plus(1) ?: 0
@@ -848,7 +849,7 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
 
         with(checkpointStorageProvider.getCheckpoints(agent.id)) {
             size shouldBeGreaterThanOrEqual 3
-            mapNotNull { (it.properties?.entries?.get("nodePath") as? JSONPrimitive)?.toString() }.toSet() shouldNotBeNull {
+            mapNotNull { it.graphProperties?.nodePath }.toSet() shouldNotBeNull {
                 shouldForAny { it.shouldContain(hello) }
                 shouldForAny { it.shouldContain(world) }
                 shouldForAny { it.shouldContain(bye) }
@@ -928,17 +929,18 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
             edge(finalNode forwardTo nodeFinish)
         }
 
-        @Suppress("DEPRECATION")
         val checkpoint = AgentCheckpointData(
             checkpointId = "last-input-checkpoint",
             createdAt = KoogClock.System.now(),
-            nodePath = path(sessionId, strategyName, node2Name),
-            lastInput = JSONPrimitive("Node 1 output"),
             messageHistory = listOf(
                 Message.User("Restored user message", metaInfo = RequestMetaInfo(KoogClock.System.now())),
                 Message.Assistant("Restored assistant message", metaInfo = ResponseMetaInfo(KoogClock.System.now()))
             ),
-            version = 0
+            version = 0,
+            graphProperties = GraphCheckpointProperties(
+                nodePath = path(sessionId, strategyName, node1Name),
+                lastOutput = JSONPrimitive("Node 1 output"),
+            ),
         )
 
         val agent = AIAgent(
@@ -981,10 +983,12 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
         val checkpoint = AgentCheckpointData(
             checkpointId = "invalid-checkpoint",
             createdAt = KoogClock.System.now(),
-            nodePath = path(sessionId, strategyName, "MissingNode"),
-            lastOutput = JSONPrimitive("missing"),
             messageHistory = emptyList(),
-            version = 0
+            version = 0,
+            graphProperties = GraphCheckpointProperties(
+                nodePath = path(sessionId, strategyName, "MissingNode"),
+                lastOutput = JSONPrimitive("missing")
+            )
         )
 
         val agent = AIAgent(
@@ -1045,7 +1049,7 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
                     val parent = getLatestCheckpoint(agentContext.agentId)
                     createCheckpointAfterNode(
                         agentContext = agentContext,
-                        nodePath = bye,
+                        nodePath = agentContext.executionInfo.path(),
                         lastOutput = input,
                         lastOutputType = typeToken<String>(),
                         version = parent?.version?.plus(1) ?: 0
@@ -1081,10 +1085,10 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
         agent.run(testInput, agent.id)
 
         val expectedNodePath = path(agentId, strategyName, bye)
-        with(fileStorageProvider.getCheckpoints(agent.id).filter { it.nodePath != "tombstone" }) {
+        with(fileStorageProvider.getCheckpoints(agent.id).filter { !it.isTombstone() }) {
             withClue(incorrectNodeIdError) {
                 shouldNotBeEmpty()
-                first().nodePath shouldBe expectedNodePath
+                first().graphProperties?.nodePath shouldBe expectedNodePath
             }
         }
     }
@@ -1143,7 +1147,7 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
                 }
 
                 withClue("Checkpoint message history should contain a tool call to '${SimpleCalculatorTool.name}'") {
-                    storageProvider.getCheckpoints(agent.id).filter { it.nodePath != "tombstone" }
+                    storageProvider.getCheckpoints(agent.id).filter { !it.isTombstone() }
                         .shouldNotBeEmpty()
                         .shouldForAny { cp ->
                             cp.messageHistory.any { msg ->
@@ -1336,7 +1340,7 @@ class AIAgentIntegrationTest : AIAgentTestBase() {
                         strategy = strategy
                     )
 
-                    edge(nodeStart forwardTo callLLM asUserMessage { it })
+                    edge(nodeStart forwardTo callLLM)
                     edge(callLLM forwardTo nodeCompressHistory onTextMessage { true })
                     edge(nodeCompressHistory forwardTo nodeFinish transformed { it to llm.prompt.messages })
                 }

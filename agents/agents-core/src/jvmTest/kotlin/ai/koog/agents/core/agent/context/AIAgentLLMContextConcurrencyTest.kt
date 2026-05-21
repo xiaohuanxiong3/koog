@@ -15,13 +15,14 @@ import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.testing.tools.getMockExecutor
-import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.Prompt
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.ollama.client.OllamaModels
 import ai.koog.prompt.message.MessagePart
 import ai.koog.serialization.kotlinx.KotlinxSerializer
 import ai.koog.serialization.kotlinx.toKoogJSONObject
 import ai.koog.serialization.kotlinx.toKoogJSONPrimitive
+import ai.koog.serialization.typeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -153,7 +154,7 @@ class AIAgentLLMContextConcurrencyTest {
     )
 
     private class TestTool : SimpleTool<TestToolArgs>(
-        argsSerializer = TestToolArgs.serializer(),
+        argsType = typeToken<TestToolArgs>(),
         name = "test-tool",
         description = "A test tool for testing"
     ) {

@@ -114,15 +114,12 @@ public class GenericAgentEnvironment(
             )
         }
 
-        val toolResult = try {
-            @Suppress("UNCHECKED_CAST")
-            (tool as ToolBase<Any?, Any?>).execute(toolArgs, metadata)
-        @Suppress("UNCHECKED_CAST")
-        val concreteTool = tool as Tool<Any?, Any?>
+        val concreteTool = tool as ToolBase<Any?, Any?>
 
         val toolResult = try {
+            @Suppress("UNCHECKED_CAST")
             withContext(ToolCallContext(agentId, id, toolName, toolArgsJson)) {
-                concreteTool.execute(toolArgs)
+                concreteTool.execute(toolArgs, metadata)
             }
         } catch (e: CancellationException) {
             throw e

@@ -10,8 +10,6 @@ import ai.koog.serialization.JSONObject
 import ai.koog.serialization.JSONSerializer
 import ai.koog.serialization.kotlinx.toKoogJSONObject
 import io.github.oshai.kotlinlogging.KLogger
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonObject
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -114,13 +112,9 @@ public class GenericAgentEnvironment(
             )
         }
 
-        val concreteTool = tool as ToolBase<Any?, Any?>
-
         val toolResult = try {
             @Suppress("UNCHECKED_CAST")
-            withContext(ToolCallContext(agentId, id, toolName, toolArgsJson)) {
-                concreteTool.execute(toolArgs, metadata)
-            }
+            (tool as ToolBase<Any?, Any?>).execute(toolArgs, metadata)
         } catch (e: CancellationException) {
             throw e
         } catch (e: ToolException) {

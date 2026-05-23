@@ -15,16 +15,12 @@ import ai.koog.prompt.executor.clients.openai.base.AbstractOpenAILLMClient
 import ai.koog.prompt.executor.clients.openai.base.OpenAIBaseSettings
 import ai.koog.prompt.executor.clients.openai.base.OpenAICompatibleToolDescriptorSchemaGenerator
 import ai.koog.prompt.executor.clients.openai.base.models.Content
-import ai.koog.prompt.executor.clients.openai.base.models.OpenAIFunction
 import ai.koog.prompt.executor.clients.openai.base.models.OpenAIMessage
 import ai.koog.prompt.executor.clients.openai.base.models.OpenAIResponseFormat
 import ai.koog.prompt.executor.clients.openai.base.models.OpenAITool
-import ai.koog.prompt.executor.clients.openai.base.models.OpenAIToolCall
 import ai.koog.prompt.executor.clients.openai.base.models.OpenAIToolChoice
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
-import ai.koog.prompt.message.Message
-import ai.koog.prompt.message.LLMChoice
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.params.LLMParams
@@ -34,8 +30,6 @@ import ai.koog.utils.time.KoogClock
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
 import kotlin.jvm.JvmOverloads
-import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 
 /**
  * Configuration settings for connecting to the DeepSeek API.
@@ -202,7 +196,7 @@ public class DeepSeekLLMClient @JvmOverloads constructor(
         response.collect { chunk ->
             chunk.choices.firstOrNull()?.let { choice ->
                 choice.delta.content?.let { emitTextDelta(it) }
-                choice.delta.content?.let { emitReasoningDelta(text = it)}
+                choice.delta.reasoningContent?.let { emitReasoningDelta(text = it)}
 
                 choice.delta.toolCalls?.forEach { toolCall ->
                     val id = toolCall.id
@@ -230,85 +224,6 @@ public class DeepSeekLLMClient @JvmOverloads constructor(
                 is LLMParams.Schema.JSON -> OpenAIResponseFormat.JsonObject()
             }
         }
-    }
-
-    @OptIn(ExperimentalUuidApi::class)
-    override fun convertPromptToMessages(prompt: Prompt, model: LLModel): List<OpenAIMessage> {
-        val messages = mutableListOf<OpenAIMessage>()
-        val pendingCalls = mutableListOf<OpenAIToolCall>()
-
-        fun flushPendingCalls() {
-            if (pendingCalls.isNotEmpty()) {
-                if (messages.last() is OpenAIMessage.Assistant) {
-                    val lastAssistant = messages.last() as OpenAIMessage.Assistant
-                    messages.removeLast()
-                    messages += OpenAIMessage.Assistant(
-                        content = lastAssistant.content,
-                        toolCalls = pendingCalls.toList(),
-                        reasoningContent = lastAssistant.reasoningContent
-                    )
-                } else {
-                    messages += OpenAIMessage.Assistant(toolCalls = pendingCalls.toList())
-                }
-                pendingCalls.clear()
-            }
-        }
-
-        prompt.messages.forEachIndexed { index, message ->
-            when (message) {
-                is Message.System -> {
-                    flushPendingCalls()
-                    messages += OpenAIMessage.System(content = Content.Text(message.content))
-                }
-
-                is Message.User -> {
-                    flushPendingCalls()
-                    messages += OpenAIMessage.User(content = message.toMessageContent(model))
-                }
-
-                is Message.Assistant -> {
-                    flushPendingCalls()
-                    if (index > 0 && prompt.messages[index - 1] is Message.Reasoning) {
-                        // 此条 Assistant 信息接在Reasoning 之后，不需要处理
-                    } else {
-                        messages += OpenAIMessage.Assistant(content = Content.Text(message.content))
-                    }
-                }
-
-                is Message.Reasoning -> {
-                    flushPendingCalls()
-                    if (index < prompt.messages.size - 1) {
-                        messages += OpenAIMessage.Assistant(
-                            content = Content.Text(prompt.messages[index + 1].content),
-                            reasoningContent = message.content
-                        )
-                    } else {
-                        messages += OpenAIMessage.Assistant(
-                            content = Content.Text(message.content),
-                            reasoningContent = message.content
-                        )
-                    }
-                }
-
-                is Message.Tool.Result -> {
-                    flushPendingCalls()
-                    messages += OpenAIMessage.Tool(
-                        content = Content.Text(message.content),
-                        toolCallId = message.id ?: Uuid.random().toString()
-                    )
-                }
-
-                is Message.Tool.Call -> {
-                    pendingCalls += OpenAIToolCall(
-                        message.id ?: Uuid.random().toString(),
-                        function = OpenAIFunction(message.tool, message.content)
-                    )
-                }
-            }
-        }
-        flushPendingCalls()
-
-        return messages
     }
 
     public override suspend fun moderate(prompt: Prompt, model: LLModel): ModerationResult {

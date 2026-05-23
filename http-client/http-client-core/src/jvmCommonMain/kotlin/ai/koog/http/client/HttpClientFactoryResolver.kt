@@ -45,6 +45,20 @@ public object HttpClientFactoryResolver {
             )
         }
 
-    private fun loadKoogHttpClientFactories(): List<KoogHttpClient.Factory> =
-        ServiceLoader.load(KoogHttpClient.Factory::class.java).toList()
+    // todo 需要更好的解决方案
+    private fun loadKoogHttpClientFactories(): List<KoogHttpClient.Factory> {
+        val clazz = Class.forName(
+            $$"ai.koog.http.client.ktor.KtorKoogHttpClient$Factory"
+        )
+
+        return listOf(
+            clazz.getDeclaredConstructor().newInstance()
+                as KoogHttpClient.Factory
+        )
+    }
+//        ServiceLoader.load(
+//            KoogHttpClient.Factory::class.java,
+//            KoogHttpClient.Factory::class.java.classLoader
+//        ).toList()
+
 }

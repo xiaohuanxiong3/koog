@@ -69,6 +69,7 @@ internal class DeepSeekChatCompletionRequest(
     override val model: String,
     override val stream: Boolean? = null,
     override val temperature: Double? = null,
+    val reasoningEffort: String = "max",
     val tools: List<OpenAITool>? = null,
     val toolChoice: OpenAIToolChoice? = null,
     override val topP: Double? = null,

@@ -241,6 +241,28 @@ tasks {
     }
 }
 
+// Aggregate of every publication a JVM consumer needs: KMP root metadata (Gradle Module
+// Metadata redirects go through it), KMP jvm variants, and plain JVM modules ("maven"
+// publication). Skips js/wasmJs/android/iOS, so no Android SDK is required.
+val publishAllJvmToMavenLocal = tasks.register("publishAllJvmToMavenLocal") {
+    group = "publishing"
+    description = "Publishes all JVM-consumable artifacts (KMP root metadata + JVM variants + plain JVM modules) to the local Maven repository."
+}
+
+subprojects {
+    publishAllJvmToMavenLocal.configure {
+        dependsOn(
+            tasks.matching {
+                it.name in setOf(
+                    "publishKotlinMultiplatformPublicationToMavenLocal",
+                    "publishJvmPublicationToMavenLocal",
+                    "publishMavenPublicationToMavenLocal",
+                )
+            }
+        )
+    }
+}
+
 dependencies {
     dokka(project(":agents:agents-core"))
     dokka(project(":agents:agents-ext"))
